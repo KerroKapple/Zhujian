@@ -20,8 +20,8 @@
 from typing import List, Dict, Optional, Literal
 from loguru import logger
 
-from services.retrieval.bm25_retriever import BM25Retriever
-from services.retrieval.vector_retriever import VectorRetriever
+from services.retrieval.bm25.bm25_engine import BM25Retriever
+from services.retrieval.vector.vector_engine import VectorRetriever
 from services.rerank.reranker import Reranker
 
 
@@ -352,8 +352,8 @@ class HybridRetriever:
 # =========================================
 """
 from services.retrieval.hybrid_retriever import HybridRetriever
-from services.retrieval.bm25_retriever import BM25Retriever
-from services.retrieval.vector_retriever import VectorRetriever
+from services.retrieval.bm25.bm25_engine import BM25Retriever
+from services.retrieval.vector.vector_engine import VectorRetriever
 from services.rerank.reranker import Reranker
 
 # 1. 初始化各组件

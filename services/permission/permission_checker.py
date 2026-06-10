@@ -452,10 +452,80 @@ class PermissionChecker:
             )
             return False
 
-        # TODO: 检查用户对特定资源的细粒度权限
-        # 这里可以查询 UserPermission 表获取更细粒度的权限
+        # 检查用户对特定资源的细粒度权限（UserPermission 表）
+        if resource_id:
+            fine_grained = self._check_fine_grained_permission(
+                user_id, resource_type, resource_id, action
+            )
+            if fine_grained is False:
+                logger.debug(
+                    f"用户 {user_id} 对资源 {resource_type.value}:{resource_id} "
+                    f"无 {action.value} 细粒度权限"
+                )
+                return False
 
         return True
+
+    def _check_fine_grained_permission(
+        self,
+        user_id: str,
+        resource_type: ResourceType,
+        resource_id: str,
+        action: ActionType
+    ) -> Optional[bool]:
+        """
+        查询 UserPermission 表判断细粒度权限
+
+        返回：
+            True  - 存在显式授权且允许
+            False - 存在显式记录但不允许
+            None  - 无显式记录（交由上层角色权限决定）
+        """
+        action_to_column = {
+            ActionType.READ: "can_read",
+            ActionType.WRITE: "can_write",
+            ActionType.DELETE: "can_delete",
+            ActionType.SHARE: "can_share",
+        }
+        column = action_to_column.get(action)
+        if column is None:
+            return None
+
+        from core.database import SessionLocal
+        from models.user import UserPermission
+
+        db: Session = SessionLocal()
+        try:
+            now = datetime.utcnow()
+            # 优先匹配具体资源，其次匹配资源类型通配（resource_id 为空）
+            records = (
+                db.query(UserPermission)
+                .filter(
+                    UserPermission.user_id == user_id,
+                    UserPermission.resource_type == resource_type.value,
+                    UserPermission.resource_id.in_([resource_id, None]),
+                )
+                .all()
+            )
+            if not records:
+                return None
+
+            # 具体资源记录优先于通配记录
+            records.sort(key=lambda r: 0 if r.resource_id == resource_id else 1)
+            for record in records:
+                if record.valid_from and now < record.valid_from:
+                    continue
+                if record.valid_until and now > record.valid_until:
+                    continue
+                return bool(getattr(record, column, False))
+
+            return None
+        except Exception as e:
+            logger.error(f"细粒度权限查询失败: {e}")
+            # 查询失败时不放行细粒度判断，保持上层角色权限结果
+            return None
+        finally:
+            db.close()
 
     # =========================================
     # 权限验证装饰器

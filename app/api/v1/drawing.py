@@ -499,7 +499,35 @@ async def get_drawing_entities(
         }
         relations = []
 
-        # TODO: 解析 graph_data 填充 entities 和 relations
+        # 解析 graph_data，按节点标签分类填充 entities，并组装 relations
+        label_to_key = {
+            "Component": "components",
+            "Material": "materials",
+            "Dimension": "dimensions",
+            "Specification": "specifications",
+        }
+        for node in graph_data.get("nodes", []):
+            if not node:
+                continue
+            key = label_to_key.get(node.get("label"))
+            if not key:
+                continue
+            if entity_type and key != f"{entity_type}s" and key != entity_type:
+                continue
+            item = dict(node.get("properties", {}))
+            item.setdefault("id", node.get("id"))
+            entities[key].append(item)
+
+        for rel in graph_data.get("relationships", []):
+            if not rel:
+                continue
+            relations.append({
+                "id": rel.get("id"),
+                "type": rel.get("type"),
+                "from_node_id": rel.get("from_node_id"),
+                "to_node_id": rel.get("to_node_id"),
+                "properties": rel.get("properties", {}),
+            })
 
         # 统计
         summary = EntitySummary(

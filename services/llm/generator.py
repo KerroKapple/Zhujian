@@ -24,7 +24,7 @@ from loguru import logger
 
 from services.llm.llm_client import LLMClient
 from services.llm.prompt.qa_prompt import QAPromptFactory
-from services.retrieval.hybrid_retriever import HybridRetriever
+from services.retrieval.hybrid.hybrid_retriever import HybridRetriever
 
 
 class AnswerGenerator:
@@ -377,7 +377,7 @@ Requirements:
 """
 from services.llm.generator import AnswerGenerator
 from services.llm.llm_client import LLMClient
-from services.retrieval.hybrid_retriever import HybridRetriever
+from services.retrieval.hybrid.hybrid_retriever import HybridRetriever
 
 # 1. 初始化组件
 llm_client = LLMClient(

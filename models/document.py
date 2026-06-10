@@ -246,7 +246,7 @@ class Document(Base):
     )
 
     # 一对一：文档元数据
-    metadata = relationship(
+    doc_metadata = relationship(
         "DocumentMetadata",
         back_populates="document",
         uselist=False,
@@ -380,7 +380,7 @@ class DocumentChunk(Base):
     )
 
     # ===== 元数据 =====
-    metadata = Column(
+    chunk_metadata = Column(
         JSON,
         nullable=True,
         comment="额外的元数据（JSON格式）"
@@ -565,7 +565,7 @@ class DocumentMetadata(Base):
     )
 
     # ===== 关联关系 =====
-    document = relationship("Document", back_populates="metadata")
+    document = relationship("Document", back_populates="doc_metadata")
 
     def __repr__(self):
         return f"<DocumentMetadata(id={self.id}, doc_id={self.document_id})>"

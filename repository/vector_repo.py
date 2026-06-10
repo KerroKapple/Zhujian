@@ -17,7 +17,7 @@ Milvus向量数据库访问层 (Repository)
 """
 from typing import List, Dict, Any, Optional, Tuple
 from pymilvus import (
-    connections, Collection, FieldSchema,
+    Collection, FieldSchema,
     CollectionSchema, DataType, utility
 )
 import numpy as np
@@ -25,6 +25,7 @@ import numpy as np
 from core.config import settings
 from core.constants import MilvusCollection, MilvusIndexParams, SearchParams
 from core.logger import logger, log_execution
+from services.retrieval.vector.milvus_client import milvus_client
 
 
 class VectorRepository:
@@ -52,36 +53,13 @@ class VectorRepository:
         """
         连接到Milvus服务器
 
-        📌 连接信息从配置文件读取
+        📌 连接由全局 milvus_client 单例统一管理
         """
-        try:
-            # 检查是否已连接
-            if connections.has_connection("default"):
-                logger.info("Milvus已连接")
-                return
-
-            # 建立连接
-            connections.connect(
-                alias="default",
-                host=settings.MILVUS_HOST,
-                port=settings.MILVUS_PORT,
-                user=settings.MILVUS_USER if settings.MILVUS_USER else None,
-                password=settings.MILVUS_PASSWORD if settings.MILVUS_PASSWORD else None
-            )
-
-            logger.info(f"成功连接到Milvus: {settings.MILVUS_HOST}:{settings.MILVUS_PORT}")
-
-        except Exception as e:
-            logger.error(f"连接Milvus失败: {str(e)}")
-            raise
+        milvus_client.ensure_connected()
 
     def disconnect(self):
         """断开Milvus连接"""
-        try:
-            connections.disconnect("default")
-            logger.info("断开Milvus连接")
-        except Exception as e:
-            logger.error(f"断开Milvus连接失败: {str(e)}")
+        milvus_client.close()
 
     # =========================================
     # 集合（Collection）管理

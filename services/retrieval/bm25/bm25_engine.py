@@ -25,7 +25,7 @@ import numpy as np
 from rank_bm25 import BM25Okapi
 from loguru import logger
 
-from services.retrieval.text_utils import TextProcessor
+from utils.text_utils import TextProcessor
 
 
 class BM25Retriever:

@@ -40,6 +40,83 @@ class PermissionLevel(str, Enum):
 
 
 # =========================================
+# 文档类型
+# =========================================
+class DocumentType(str, Enum):
+    """
+    文档类型枚举
+
+    既包含业务分类（规范/项目/合同），也包含文件格式（PDF/Word/图片/文本）。
+    """
+    # 业务分类
+    STANDARD = "standard"   # 权威规范
+    PROJECT = "project"     # 项目资料
+    CONTRACT = "contract"   # 合同
+    # 文件格式
+    PDF = "pdf"
+    WORD = "word"
+    IMAGE = "image"
+    TEXT = "text"
+    # 兜底
+    OTHER = "other"
+    UNKNOWN = "unknown"
+
+
+# =========================================
+# 文档处理状态
+# =========================================
+class DocumentStatus(str, Enum):
+    """文档处理状态枚举"""
+    PENDING = "pending"         # 待处理
+    PROCESSING = "processing"   # 处理中
+    COMPLETED = "completed"     # 处理完成
+    FAILED = "failed"           # 处理失败
+
+
+# =========================================
+# 检索模式
+# =========================================
+class RetrievalMode(str, Enum):
+    """检索模式枚举"""
+    VECTOR = "vector"   # 向量语义检索
+    BM25 = "bm25"       # 关键词检索
+    HYBRID = "hybrid"   # 混合检索
+    GRAPH = "graph"     # 图谱增强检索
+
+
+# =========================================
+# 查询类型
+# =========================================
+class QueryType(str, Enum):
+    """查询类型枚举"""
+    STANDARD_QUERY = "standard_query"   # 规范查询
+    CONTRACT_QUERY = "contract_query"   # 合同查询
+    CASE_QUERY = "case_query"           # 案例查询
+    GENERAL_QUERY = "general_query"     # 通用查询
+
+
+# =========================================
+# 答案质量
+# =========================================
+class AnswerQuality(str, Enum):
+    """答案质量评估枚举"""
+    HIGH = "high"       # 高质量
+    MEDIUM = "medium"   # 中等质量
+    LOW = "low"         # 低质量
+    UNKNOWN = "unknown" # 未评估
+
+
+# =========================================
+# Milvus 集合名称
+# =========================================
+class MilvusCollection(str, Enum):
+    """三层向量库集合名称枚举"""
+    STANDARDS = "rag_standards"   # 第一层：权威规范库
+    PROJECTS = "rag_projects"     # 第二层：项目资料库
+    CONTRACTS = "rag_contracts"   # 第三层：合同库
+
+
+# =========================================
 # HTTP状态码
 # =========================================
 class HTTPStatus:

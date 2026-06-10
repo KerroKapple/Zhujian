@@ -117,7 +117,7 @@ async def check_services():
 
     # 检查 Milvus
     try:
-        from services.retrieval.milvus_client import milvus_client
+        from services.retrieval.vector.milvus_client import milvus_client
         if milvus_client.is_connected():
             logger.info("  ✓ Milvus 连接正常")
     except Exception as e:
@@ -144,7 +144,7 @@ async def cleanup_resources():
 
     try:
         # 关闭 Milvus 连接
-        from services.retrieval.milvus_client import milvus_client
+        from services.retrieval.vector.milvus_client import milvus_client
         milvus_client.close()
         logger.info("  ✓ Milvus 连接已关闭")
     except Exception as e:

@@ -399,24 +399,35 @@ class GraphRepository:
         """
         获取文档的完整知识图谱
 
-        返回：
+        返回（保留节点标签与关系类型，便于消费方分类）：
             {
-                "nodes": [...],
-                "relationships": [...],
+                "document": {"id", "label", "properties"} | None,
+                "nodes": [{"id", "label", "properties"}],
+                "relationships": [
+                    {"id", "from_node_id", "to_node_id", "type", "properties"}
+                ],
             }
         """
         query = """
         MATCH (d:Document {id: $doc_id})
         OPTIONAL MATCH (d)-[r1]->(n1)
         OPTIONAL MATCH (n1)-[r2]->(n2)
-        WITH d, collect(DISTINCT n1) + collect(DISTINCT n2) as nodes,
-             collect(DISTINCT r1) + collect(DISTINCT r2) as rels
-        RETURN d as document, nodes, rels
+        WITH d,
+             [n IN collect(DISTINCT n1) + collect(DISTINCT n2) WHERE n IS NOT NULL] AS ns,
+             [r IN collect(DISTINCT r1) + collect(DISTINCT r2) WHERE r IS NOT NULL] AS rs
+        RETURN
+            {id: d.id, label: head(labels(d)), properties: properties(d)} AS document,
+            [n IN ns | {id: coalesce(n.id, elementId(n)), label: head(labels(n)),
+                        properties: properties(n)}] AS nodes,
+            [r IN rs | {id: elementId(r), type: type(r),
+                        from_node_id: coalesce(startNode(r).id, elementId(startNode(r))),
+                        to_node_id: coalesce(endNode(r).id, elementId(endNode(r))),
+                        properties: properties(r)}] AS relationships
         """
         results = self.client.execute_query(query, {"doc_id": doc_id})
         if results:
             return results[0]
-        return {"document": None, "nodes": [], "rels": []}
+        return {"document": None, "nodes": [], "relationships": []}
 
     def find_related_components(
         self,

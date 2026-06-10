@@ -120,7 +120,7 @@ class DocumentRepository:
             if include_chunks:
                 query = query.options(joinedload(Document.chunks))
             if include_metadata:
-                query = query.options(joinedload(Document.metadata))
+                query = query.options(joinedload(Document.doc_metadata))
 
             document = query.filter(Document.id == doc_id).first()
             return document

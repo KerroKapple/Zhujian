@@ -239,7 +239,7 @@ async def get_document_graph(document_id: str):
 
         # 转换关系数据
         relationships = []
-        for rel in graph_data.get("rels", []):
+        for rel in graph_data.get("relationships", []):
             if rel:
                 relationships.append(RelationInfo(
                     id=rel.get("id", ""),
@@ -866,33 +866,37 @@ async def get_visualization_data(
         # 添加文档节点
         doc = graph_data.get("document")
         if doc:
+            doc_props = doc.get("properties", {})
+            doc_id_val = doc.get("id") or document_id
             nodes.append({
-                "id": doc.get("id", document_id),
-                "name": doc.get("name", document_id),
+                "id": doc_id_val,
+                "name": doc_props.get("name", document_id),
                 "category": 0,
                 "symbolSize": 40,
-                "value": doc.get("id", "")
+                "value": doc_id_val
             })
-            node_ids.add(doc.get("id", document_id))
+            node_ids.add(doc_id_val)
 
         # 添加其他节点
         for node in graph_data.get("nodes", [])[:max_nodes]:
             if node and node.get("id") not in node_ids:
-                label = list(node.labels)[0] if hasattr(node, 'labels') else "Unknown"
+                label = node.get("label", "Unknown")
                 category = label_to_category.get(label, 1)
+                props = node.get("properties", {})
+                node_id_val = node.get("id", "")
 
                 nodes.append({
-                    "id": node.get("id", ""),
-                    "name": node.get("code", node.get("name", node.get("id", "")[:8])),
+                    "id": node_id_val,
+                    "name": props.get("code", props.get("name", str(node_id_val)[:8])),
                     "category": category,
                     "symbolSize": 20,
-                    "value": str(node.get("id", ""))
+                    "value": str(node_id_val)
                 })
-                node_ids.add(node.get("id", ""))
+                node_ids.add(node_id_val)
 
         # 转换边
         edges = []
-        for rel in graph_data.get("rels", []):
+        for rel in graph_data.get("relationships", []):
             if rel:
                 source = rel.get("from_node_id", "")
                 target = rel.get("to_node_id", "")

@@ -19,21 +19,12 @@
 import os
 from pathlib import Path
 from typing import Dict, List, Any, Optional
-from enum import Enum
 
 from services.document.pdf_parser import PDFParser
 from services.document.word_parser import WordParser
 from services.document.ocr_parser import OCRParser
+from core.constants import DocumentType
 from loguru import logger
-
-
-class DocumentType(str, Enum):
-    """文档类型枚举"""
-    PDF = "pdf"
-    WORD = "word"
-    IMAGE = "image"
-    TEXT = "text"
-    UNKNOWN = "unknown"
 
 
 class DocumentLoader:

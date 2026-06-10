@@ -13,6 +13,11 @@ venv/
 
 # Logs
 *.log
+logs/
+
+# Node / 前端构建产物
+node_modules/
+frontend/dist/
 
 # OS
 .DS_Store
