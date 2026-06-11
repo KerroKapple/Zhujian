@@ -229,7 +229,7 @@ enterprise_rag/
 │   └── DEPLOYMENT_GUIDE.md        # 部署指南
 │
 ├── .env                           # 环境变量配置
-├── requirements.txt               # Python 依赖
+├── pyproject.toml                 # 项目与依赖定义（uv）
 └── README.md                      # 项目说明
 ```
 
@@ -255,17 +255,14 @@ docker-compose up -d
 ### 2. 配置 Python 环境
 
 ```bash
-# 创建虚拟环境
-python -m venv venv
+# 安装依赖（依赖见 pyproject.toml，uv 自动管理虚拟环境）
+uv sync
+```
 
-# 激活（Windows）
-venv\Scripts\activate
+重型 ML 层（OCR/向量化）按需安装：
 
-# 激活（Linux/Mac）
-source venv/bin/activate
-
-# 安装依赖
-pip install -r requirements.txt
+```bash
+uv add torch sentence-transformers paddlepaddle
 ```
 
 ### 3. 配置环境变量

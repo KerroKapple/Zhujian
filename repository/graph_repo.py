@@ -90,11 +90,10 @@ class GraphRepository:
         return results[0]["n"] if results else None
 
     def delete_document_and_relations(self, doc_id: str) -> Dict:
-        """删除文档及其所有关联节点和关系"""
+        """删除文档及其所有可达关联节点和关系（变长路径，一次删尽不留孤儿）"""
         query = """
         MATCH (d:Document {id: $doc_id})
-        OPTIONAL MATCH (d)-[r1]->(n)
-        OPTIONAL MATCH (n)-[r2]->()
+        OPTIONAL MATCH (d)-[*0..]->(n)
         DETACH DELETE d, n
         """
         return self.client.execute_write(query, {"doc_id": doc_id})
@@ -497,15 +496,7 @@ class GraphRepository:
                 - rel_type: 关系类型
                 - properties: 关系属性（可选）
         """
-        query = """
-        UNWIND $rels as rel
-        MATCH (a {id: rel.from_id}), (b {id: rel.to_id})
-        CALL apoc.create.relationship(a, rel.rel_type, rel.properties, b)
-        YIELD rel as created
-        RETURN count(created) as count
-        """
-
-        # 如果没有 APOC 插件，使用简单方式
+        # 逐条创建关系，关系类型为动态值无法直接参数化，复用客户端方法
         created_count = 0
         for rel in relationships:
             try:

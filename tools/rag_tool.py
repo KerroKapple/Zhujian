@@ -2,15 +2,16 @@
 RAG Tool
 ========
 
-基于 `services.rag.pipeline.RagPipeline` 的一个简单工具封装，
-给上层的 Agents 或 FastAPI 直接调用。
+基于 `services.rag.RagPipeline` 的工具封装，供上层 Agents 或 FastAPI 调用。
+重型 ML 依赖延迟到调用时导入，避免仅导入本模块即触发 torch 连锁加载。
 """
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any, Optional, TYPE_CHECKING
 
-from services.rag import RagPipeline
+if TYPE_CHECKING:
+    from services.rag import RagPipeline
 
 
 async def run_rag(
@@ -19,7 +20,7 @@ async def run_rag(
     top_k: int = 5,
     project_id: Optional[str] = None,
     extra_context: Optional[str] = None,
-    pipeline: RagPipeline | None = None,
+    pipeline: "RagPipeline | None" = None,
 ) -> dict[str, Any]:
     """
     对外暴露的 RAG 调用工具。
@@ -31,13 +32,14 @@ async def run_rag(
     - `pipeline`: 可注入自定义 RagPipeline（方便测试或不同配置）
     """
     if pipeline is None:
+        # 延迟 import：触发 torch 等重型依赖仅在真正调用时发生
+        from services.rag import RagPipeline
+
         pipeline = RagPipeline()
 
-    result = await pipeline.run(
+    return await pipeline.run(
         query=query,
         top_k=top_k,
         project_id=project_id,
         extra_context=extra_context,
     )
-    return result
-

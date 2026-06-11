@@ -26,8 +26,7 @@ from unittest.mock import Mock, AsyncMock, patch, MagicMock
 from datetime import date, datetime
 from dataclasses import asdict
 
-# 测试配置
-pytestmark = pytest.mark.asyncio
+# 异步测试由 pytest.ini 的 asyncio_mode=auto 自动识别，无需模块级 pytestmark
 
 
 # =========================================
@@ -62,11 +61,14 @@ def mock_progress_tools():
         "not_started_tasks": 10
     }
     tools.get_progress_status.return_value = {
+        "total_tasks": 100,
+        "avg_planned_progress": 70.0,
+        "avg_actual_progress": 64.4,
+        "variance": -5.6,
+        "variance_rate": -8.0,
         "overall_spi": 0.92,
         "risk_level": "yellow",
-        "variance_days": -5,
-        "earned_value": 650000,
-        "planned_value": 700000
+        "risk_description": "进度略有延期，需要关注并采取措施"
     }
     tools.get_delayed_tasks.return_value = [
         {
@@ -74,34 +76,52 @@ def mock_progress_tools():
             "task_name": "基础施工",
             "planned_progress": 80,
             "actual_progress": 65,
+            "variance": -15.0,
             "spi": 0.81,
-            "delay_days": 5,
-            "is_critical": True
+            "severity": "中等",
+            "reason": "SPI=0.81，进度落后于计划",
+            "is_critical_path": True
         }
     ]
     tools.get_critical_path_tasks.return_value = [
         {
             "task_id": "T001",
             "task_name": "基础施工",
+            "planned_progress": 80,
+            "actual_progress": 65,
             "spi": 0.81,
+            "status": "in_progress",
+            "planned_start": "2024-01-01",
+            "planned_end": "2024-03-01",
             "is_delayed": True
         }
     ]
     tools.analyze_progress_trend.return_value = {
-        "updates": [
-            {"date": "2024-01-01", "spi": 0.90},
-            {"date": "2024-01-08", "spi": 0.92}
-        ]
+        "analysis_period": "最近30天",
+        "updated_tasks": 12,
+        "high_risk_tasks": 1,
+        "medium_risk_tasks": 3,
+        "trend": "平稳"
     }
     tools.predict_completion_time.return_value = {
-        "predicted_end_date": "2024-06-30",
-        "original_end_date": "2024-06-15",
-        "delay_days": 15,
-        "will_delay": True
+        "current_progress": 65.0,
+        "remaining_progress": 35.0,
+        "average_spi": 0.92,
+        "planned_end_date": "2024-06-15",
+        "predicted_delay_days": 15,
+        "prediction_confidence": "中"
     }
-    tools.identify_bottlenecks.return_value = {
-        "bottlenecks": []
-    }
+    tools.identify_bottlenecks.return_value = [
+        {
+            "task_id": "T001",
+            "task_name": "基础施工",
+            "spi": 0.81,
+            "actual_progress": 65.0,
+            "impact": "高",
+            "reason": "关键路径任务，当前SPI=0.81，进度落后",
+            "recommendation": "立即增加资源投入"
+        }
+    ]
     tools.get_resource_allocation.return_value = {
         "load_status": "normal",
         "parallel_tasks": 8
@@ -125,31 +145,48 @@ def mock_cost_tools():
     }
     tools.get_cost_by_category.return_value = {
         "categories": {
-            "material": {"budget": 500000, "actual": 520000, "variance_rate": 4.0},
-            "labor": {"budget": 300000, "actual": 280000, "variance_rate": -6.7}
-        }
+            "材料": {"planned": 500000, "actual": 520000, "variance": 20000,
+                     "variance_rate": 4.0, "count": 3, "status": "超支"},
+            "人工": {"planned": 300000, "actual": 280000, "variance": -20000,
+                     "variance_rate": -6.7, "count": 2, "status": "正常"}
+        },
+        "max_overrun_category": "材料",
+        "max_overrun_rate": 4.0
     }
     tools.identify_cost_overruns.return_value = [
         {
-            "item_id": "C001",
-            "item_name": "钢材采购",
-            "overrun": 20000,
-            "overrun_rate": 8.0
+            "cost_id": "C001",
+            "category": "材料",
+            "item": "钢材采购",
+            "planned": 250000,
+            "actual": 270000,
+            "variance": 20000,
+            "variance_rate": 8.0,
+            "severity": "轻微"
         }
     ]
     tools.analyze_cost_trend.return_value = {
-        "monthly_data": [
-            {"period": "2024-01", "cpi": 0.93},
-            {"period": "2024-02", "cpi": 0.95}
-        ]
+        "analysis_period": "2024-01-01 至 2024-03-31",
+        "monthly_data": {
+            "2024-01": {"planned": 320000, "actual": 340000, "count": 2},
+            "2024-02": {"planned": 300000, "actual": 310000, "count": 2}
+        },
+        "trend": "上升",
+        "growth_rate": 5.0
     }
     tools.predict_final_cost.return_value = {
-        "predicted_total": 1050000,
+        "current_budget": 1000000,
+        "cpi": 0.95,
+        "progress_rate": 65.0,
+        "predicted_final_cost": 1050000,
+        "predicted_overrun": 50000,
+        "predicted_overrun_rate": 5.0,
         "will_exceed_budget": True,
-        "predicted_overrun_rate": 5.0
+        "confidence": "中等"
     }
     tools.identify_cost_risks.return_value = [
-        {"risk_type": "材料超支", "severity": "medium"}
+        {"risk_type": "材料超支", "severity": "medium",
+         "description": "材料成本超支", "recommendation": "优化采购"}
     ]
     tools.get_cost_control_suggestions.return_value = [
         "加强材料采购管理",
@@ -173,36 +210,56 @@ def mock_safety_tools():
         "closure_rate": 66.7,
         "risk_level": "yellow"
     }
-    tools.get_defects_by_type.return_value = {
-        "types": {
-            "scaffold": {"name": "脚手架", "count": 5, "high_level_count": 1}
-        }
+    tools.analyze_defect_distribution.return_value = {
+        "has_data": True,
+        "total_records": 15,
+        "distribution_by_level": {"high": 2, "medium": 8, "low": 5},
+        "distribution_by_status": {"open": 5, "closed": 10},
+        "distribution_by_type": {"脚手架": 5, "临边防护": 4}
     }
-    tools.get_frequent_issues.return_value = [
-        {"defect_type": "脚手架问题", "occurrence_count": 5}
+    tools.identify_frequent_issues.return_value = [
+        {
+            "defect_type": "脚手架问题",
+            "total_count": 5,
+            "high_level_count": 1,
+            "trend": "上升",
+            "frequency": 2.5,
+            "severity": "中等"
+        }
     ]
     tools.get_open_defects.return_value = [
         {
-            "defect_id": "D001",
+            "record_id": "D001",
             "defect_type": "脚手架",
-            "level": "high",
+            "defect_level": "high",
+            "description": "脚手架未按规范搭设",
+            "check_date": "2026-06-08",
             "days_open": 3,
-            "urgency": "紧急"
+            "urgency": "紧急",
+            "checker": "李四"
         }
     ]
     tools.analyze_safety_trend.return_value = {
-        "weekly_data": [
-            {"period": "W1", "pass_rate": 92.0},
-            {"period": "W2", "pass_rate": 94.0}
-        ]
+        "analysis_period": "2026-03-13 至 2026-06-11",
+        "monthly_stats": {
+            "2026-04": {"total": 6, "high": 1, "medium": 3, "low": 2, "checks": 4},
+            "2026-05": {"total": 5, "high": 2, "medium": 2, "low": 1, "checks": 4}
+        },
+        "trend": "恶化",
+        "trend_description": "高级别问题增加"
     }
     tools.get_rectification_plan.return_value = {
         "has_plan": True,
+        "total_items": 1,
+        "urgent_items": 1,
+        "important_items": 0,
+        "normal_items": 0,
         "phases": [
-            {"phase": "第一阶段", "priority": "紧急", "items": []}
+            {"phase": "第一阶段（3天内）", "priority": "紧急", "items": [],
+             "deadline": "2026-06-14"}
         ]
     }
-    tools.get_safety_suggestions.return_value = [
+    tools.get_improvement_suggestions.return_value = [
         "加强安全巡查",
         "完善防护设施"
     ]
@@ -441,7 +498,8 @@ class TestDataStructures:
 class TestThresholds:
     """阈值判断测试"""
 
-    def test_cost_risk_level_critical(self, mock_db, mock_cost_tools, mock_progress_tools):
+    @pytest.mark.asyncio
+    async def test_cost_risk_level_critical(self, mock_db, mock_cost_tools, mock_progress_tools):
         """测试成本风险等级-严重"""
         mock_cost_tools.get_cost_overview.return_value["cpi"] = 0.70
 
@@ -450,14 +508,12 @@ class TestThresholds:
             from agents.cost_agent import CostAnalysisAgent
             agent = CostAnalysisAgent(mock_db)
 
-            import asyncio
-            result = asyncio.get_event_loop().run_until_complete(
-                agent.quick_cost_check("P001")
-            )
+            result = await agent.quick_cost_check("P001")
 
             assert result["risk_level"] == "critical"
 
-    def test_progress_risk_level_high(self, mock_db, mock_progress_tools):
+    @pytest.mark.asyncio
+    async def test_progress_risk_level_high(self, mock_db, mock_progress_tools):
         """测试进度风险等级-高"""
         mock_progress_tools.get_progress_status.return_value["overall_spi"] = 0.80
 
@@ -465,10 +521,7 @@ class TestThresholds:
             from agents.progress_agent import ProgressAnalysisAgent
             agent = ProgressAnalysisAgent(mock_db)
 
-            import asyncio
-            result = asyncio.get_event_loop().run_until_complete(
-                agent.quick_progress_check("P001")
-            )
+            result = await agent.quick_progress_check("P001")
 
             assert result["risk_level"] == "high"
 

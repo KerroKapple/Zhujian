@@ -18,8 +18,6 @@
 #
 # ========================================
 
-version: '3.8'
-
 services:
   # =========================================
   # PostgreSQL - 关系数据库
@@ -72,6 +70,30 @@ services:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
+      retries: 5
+    networks:
+      - rag_network
+
+  # =========================================
+  # Neo4j - 知识图谱数据库
+  # =========================================
+  neo4j:
+    image: neo4j:5
+    container_name: rag_neo4j
+    restart: unless-stopped
+    environment:
+      # 认证：用户名/密码（生产环境请修改）
+      NEO4J_AUTH: neo4j/rag_neo4j_password
+    ports:
+      - "7474:7474"   # HTTP 浏览器界面
+      - "7687:7687"   # Bolt 协议
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:7474 || exit 1"]
+      interval: 15s
+      timeout: 10s
       retries: 5
     networks:
       - rag_network
@@ -166,6 +188,10 @@ volumes:
     driver: local
   redis_data:
     driver: local
+  neo4j_data:
+    driver: local
+  neo4j_logs:
+    driver: local
   etcd_data:
     driver: local
   minio_data:
@@ -214,6 +240,8 @@ networks:
 #
 # PostgreSQL:  localhost:5432
 # Redis:       localhost:6379
+# Neo4j浏览器: localhost:7474
+# Neo4j Bolt:  localhost:7687
 # Milvus:      localhost:19530
 # MinIO API:   localhost:9000
 # MinIO控制台: localhost:9001

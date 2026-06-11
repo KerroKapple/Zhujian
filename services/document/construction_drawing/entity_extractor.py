@@ -161,6 +161,8 @@ class EntityExtractor:
             )
             node.properties["confidence"] = comp.get("confidence", 0.9)
             node.properties["source"] = comp.get("source", "rule")
+            # 携带页码，供连接关系按页共现推断
+            node.properties["page"] = comp.get("page", 0)
             nodes.append(node)
 
         return nodes
@@ -368,15 +370,15 @@ class EntityExtractor:
         unique = []
 
         for entity in entities:
-            # 根据关键属性生成去重键
+            # 统一从 dataclass 字段取去重键
             if isinstance(entity, ComponentNode):
                 key = f"comp:{entity.code}"
             elif isinstance(entity, MaterialNode):
-                key = f"mat:{entity.properties.get('grade', '')}"
+                key = f"mat:{entity.material_type}:{entity.grade}"
             elif isinstance(entity, SpecificationNode):
                 key = f"spec:{entity.spec_code}"
             elif isinstance(entity, DimensionNode):
-                key = f"dim:{entity.properties.get('dimension_type', '')}:{entity.properties.get('value', '')}"
+                key = f"dim:{entity.dimension_type}:{entity.value}"
             else:
                 key = f"{entity.label}:{entity.id}"
 
@@ -464,10 +466,10 @@ class EntityExtractor:
         for row in data[1:]:  # 跳过表头
             row_text = " ".join([str(cell) for cell in row if cell])
 
-            # 提取构件编号
+            # 提取构件编号（精确前缀，避免误抽与梁柱重叠）
             component_patterns = [
-                (r"[KDL]+[-\s]?\d+[a-zA-Z]?", "beam"),
-                (r"[KZ]+[-\s]?\d+[a-zA-Z]?", "column"),
+                (r"\b(?:WKL|JKL|KZL|KL|LL|XL|DL|L)[-\s]?\d+[a-zA-Z]?\b", "beam"),
+                (r"\b(?:KZZ|KZ|GZ|AZ|Z)[-\s]?\d+[a-zA-Z]?\b", "column"),
             ]
 
             for pattern, comp_type in component_patterns:

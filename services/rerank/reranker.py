@@ -18,10 +18,18 @@ Rerank重排序器
 """
 
 from typing import List, Dict, Tuple, Optional
-import numpy as np
 
-from FlagEmbedding import FlagReranker
 from loguru import logger
+
+from core.config import settings
+
+# 重型依赖懒加载守卫：缺失 FlagEmbedding 时模块仍可 import
+try:
+    import FlagEmbedding  # noqa: F401
+    FLAGEMBEDDING_AVAILABLE = True
+except ImportError:
+    FLAGEMBEDDING_AVAILABLE = False
+    logger.warning("FlagEmbedding 未安装，重排序功能将降级（返回原融合顺序）。请运行: uv add FlagEmbedding")
 
 
 class Reranker:
@@ -41,7 +49,7 @@ class Reranker:
 
     def __init__(
             self,
-            model_name: str = 'BAAI/bge-reranker-large',
+            model_name: Optional[str] = None,
             device: Optional[str] = None,
             batch_size: int = 32,
             max_length: int = 512
@@ -50,31 +58,19 @@ class Reranker:
         初始化重排序器
 
         参数：
-            model_name: 重排序模型名称
-                - 'BAAI/bge-reranker-large': 大模型，精度最高
-                - 'BAAI/bge-reranker-base': 基础模型，速度快
+            model_name: 重排序模型名称（默认从 settings.RERANK_MODEL_NAME 读取）
             device: 设备 ('cuda', 'cpu', None自动选择)
             batch_size: 批处理大小
             max_length: 最大文本长度
         """
-        self.model_name = model_name
+        self.model_name = model_name or settings.RERANK_MODEL_NAME
         self.batch_size = batch_size
         self.max_length = max_length
-
-        # 自动选择设备
-        if device is None:
-            import torch
-            if torch.cuda.is_available():
-                device = 'cuda'
-            else:
-                device = 'cpu'
-
-        self.device = device
+        self.device = device  # None 时在 _load_model 内确定
 
         logger.info(
             f"初始化Reranker | "
-            f"模型: {model_name} | "
-            f"设备: {device}"
+            f"模型: {self.model_name}"
         )
 
         # 加载模型
@@ -82,12 +78,28 @@ class Reranker:
 
         logger.info("Reranker加载完成")
 
-    def _load_model(self) -> FlagReranker:
-        """加载重排序模型"""
+    def _resolve_device(self) -> str:
+        """根据 torch 可用性确定设备"""
+        import torch
+
+        if self.device is not None:
+            return self.device
+        return 'cuda' if torch.cuda.is_available() else 'cpu'
+
+    def _load_model(self):
+        """加载重排序模型（懒加载重型依赖）"""
+        if not FLAGEMBEDDING_AVAILABLE:
+            raise RuntimeError(
+                "FlagEmbedding 未安装，无法加载重排序模型。请运行: uv add FlagEmbedding"
+            )
+
+        from FlagEmbedding import FlagReranker
+
         try:
+            self.device = self._resolve_device()
             model = FlagReranker(
                 self.model_name,
-                use_fp16=True if self.device == 'cuda' else False
+                use_fp16=self.device == 'cuda'
             )
             return model
         except Exception as e:

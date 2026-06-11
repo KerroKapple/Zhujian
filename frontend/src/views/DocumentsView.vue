@@ -16,7 +16,7 @@
         <el-upload
           :show-file-list="false"
           :http-request="handleUpload"
-          accept=".pdf,.docx,.doc,.txt,.md,.png,.jpg,.jpeg"
+          accept=".pdf,.docx,.doc,.txt,.md"
         >
           <el-button type="primary" :loading="uploading"><el-icon><Upload /></el-icon>上传文档</el-button>
         </el-upload>

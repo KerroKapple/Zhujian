@@ -19,9 +19,8 @@ from sqlalchemy import (
     Column, String, Integer, DateTime, Boolean,
     JSON, ForeignKey, Enum as SQLEnum, Text
 )
-from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
-from datetime import datetime
+from datetime import datetime, timezone
 import uuid
 
 from core.constants import UserRole, PermissionLevel
@@ -168,7 +167,7 @@ class User(Base):
 
     # ===== 登录信息 =====
     last_login_at = Column(
-        DateTime,
+        DateTime(timezone=True),
         nullable=True,
         comment="最后登录时间"
     )
@@ -187,17 +186,17 @@ class User(Base):
 
     # ===== 时间信息 =====
     created_at = Column(
-        DateTime,
-        default=datetime.utcnow,
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
         nullable=False,
         index=True,
         comment="创建时间"
     )
 
     updated_at = Column(
-        DateTime,
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow,
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
         nullable=False,
         comment="更新时间"
     )
@@ -356,13 +355,13 @@ class UserPermission(Base):
 
     # ===== 有效期 =====
     valid_from = Column(
-        DateTime,
+        DateTime(timezone=True),
         nullable=True,
         comment="权限生效时间"
     )
 
     valid_until = Column(
-        DateTime,
+        DateTime(timezone=True),
         nullable=True,
         comment="权限过期时间"
     )
@@ -382,16 +381,16 @@ class UserPermission(Base):
 
     # ===== 时间信息 =====
     created_at = Column(
-        DateTime,
-        default=datetime.utcnow,
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
         nullable=False,
         comment="创建时间"
     )
 
     updated_at = Column(
-        DateTime,
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow,
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
         nullable=False,
         comment="更新时间"
     )
@@ -404,7 +403,7 @@ class UserPermission(Base):
 
     def is_valid(self) -> bool:
         """检查权限是否在有效期内"""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         if self.valid_from and now < self.valid_from:
             return False
         if self.valid_until and now > self.valid_until:
@@ -476,15 +475,15 @@ class UserSearchHistory(Base):
 
     # ===== 时间信息 =====
     first_searched_at = Column(
-        DateTime,
-        default=datetime.utcnow,
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
         nullable=False,
         comment="首次搜索时间"
     )
 
     last_searched_at = Column(
-        DateTime,
-        default=datetime.utcnow,
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
         nullable=False,
         index=True,
         comment="最后搜索时间"
@@ -546,7 +545,7 @@ has_access = user.has_permission("standard", PermissionLevel.PUBLIC)
 
 
 # 6. 更新登录信息
-user.last_login_at = datetime.utcnow()
+user.last_login_at = datetime.now(timezone.utc)
 user.last_login_ip = "192.168.1.100"
 user.login_count += 1
 session.commit()

@@ -21,10 +21,18 @@ import os
 from typing import List, Union, Optional, Dict
 from pathlib import Path
 
-import torch
 import numpy as np
-from sentence_transformers import SentenceTransformer
 from loguru import logger
+
+from core.config import settings
+
+# 重型依赖懒加载守卫：缺失 torch/sentence_transformers 时模块仍可 import
+try:
+    import sentence_transformers  # noqa: F401
+    SENTENCE_TRANSFORMERS_AVAILABLE = True
+except ImportError:
+    SENTENCE_TRANSFORMERS_AVAILABLE = False
+    logger.warning("sentence_transformers 未安装，Embedding 功能不可用。请运行: uv add sentence-transformers")
 
 
 class EmbeddingModel:
@@ -43,31 +51,9 @@ class EmbeddingModel:
     - 模型缓存
     """
 
-    # 推荐模型配置
-    RECOMMENDED_MODELS = {
-        'bge-large-zh': {
-            'model_name': 'BAAI/bge-large-zh-v1.5',
-            'dimension': 1024,
-            'max_length': 512,
-            'description': 'BGE大模型，中文最佳性能'
-        },
-        'bge-base-zh': {
-            'model_name': 'BAAI/bge-base-zh-v1.5',
-            'dimension': 768,
-            'max_length': 512,
-            'description': 'BGE基础模型，速度快'
-        },
-        'text2vec': {
-            'model_name': 'shibing624/text2vec-base-chinese',
-            'dimension': 768,
-            'max_length': 256,
-            'description': 'Text2Vec，轻量级'
-        }
-    }
-
     def __init__(
             self,
-            model_name: str = 'BAAI/bge-large-zh-v1.5',
+            model_name: Optional[str] = None,
             device: Optional[str] = None,
             cache_dir: Optional[str] = None,
             normalize_embeddings: bool = True
@@ -76,24 +62,14 @@ class EmbeddingModel:
         初始化Embedding模型
 
         参数：
-            model_name: 模型名称或路径
+            model_name: 模型名称或路径（默认从 settings.EMBEDDING_MODEL_NAME 读取）
             device: 设备 ('cuda', 'cpu', 'mps' 或 None自动选择)
             cache_dir: 模型缓存目录
             normalize_embeddings: 是否归一化向量（推荐True）
         """
-        self.model_name = model_name
+        self.model_name = model_name or settings.EMBEDDING_MODEL_NAME
         self.normalize_embeddings = normalize_embeddings
-
-        # 自动选择设备
-        if device is None:
-            if torch.cuda.is_available():
-                device = 'cuda'
-            elif torch.backends.mps.is_available():
-                device = 'mps'
-            else:
-                device = 'cpu'
-
-        self.device = device
+        self.device = device  # None 时在 _load_model 内根据 torch 可用性确定
         self.cache_dir = cache_dir or os.path.join(
             Path.home(),
             '.cache',
@@ -103,8 +79,7 @@ class EmbeddingModel:
 
         logger.info(
             f"初始化Embedding模型 | "
-            f"模型: {model_name} | "
-            f"设备: {device} | "
+            f"模型: {self.model_name} | "
             f"归一化: {normalize_embeddings}"
         )
 
@@ -112,20 +87,46 @@ class EmbeddingModel:
         self.model = self._load_model()
         self.dimension = self.model.get_sentence_embedding_dimension()
 
-        logger.info(f"模型加载完成 | 向量维度: {self.dimension}")
+        # 维度单一事实源校验
+        if self.dimension != settings.VECTOR_DIM:
+            logger.warning(
+                f"模型维度({self.dimension})与 settings.VECTOR_DIM({settings.VECTOR_DIM}) 不一致"
+            )
 
-    def _load_model(self) -> SentenceTransformer:
-        """加载SentenceTransformer模型"""
+        logger.info(f"模型加载完成 | 设备: {self.device} | 向量维度: {self.dimension}")
+
+    def _resolve_device(self) -> str:
+        """根据 torch 可用性确定设备"""
+        import torch
+
+        if self.device is not None:
+            return self.device
+
+        if torch.cuda.is_available():
+            return 'cuda'
+        # mps 用 getattr 守卫，旧版 torch 无 mps 后端
+        mps = getattr(torch.backends, 'mps', None)
+        if mps is not None and mps.is_available():
+            return 'mps'
+        return 'cpu'
+
+    def _load_model(self):
+        """加载SentenceTransformer模型（懒加载重型依赖）"""
+        if not SENTENCE_TRANSFORMERS_AVAILABLE:
+            raise RuntimeError(
+                "sentence_transformers 未安装，无法加载 Embedding 模型。请运行: uv add sentence-transformers"
+            )
+
+        from sentence_transformers import SentenceTransformer
+
         try:
+            self.device = self._resolve_device()
             model = SentenceTransformer(
                 self.model_name,
                 device=self.device,
                 cache_folder=self.cache_dir
             )
-
-            # 设置为评估模式
             model.eval()
-
             return model
 
         except Exception as e:
@@ -138,7 +139,7 @@ class EmbeddingModel:
             batch_size: int = 32,
             show_progress: bool = False,
             convert_to_numpy: bool = True
-    ) -> Union[np.ndarray, torch.Tensor]:
+    ) -> np.ndarray:
         """
         将文本编码为向量
 
@@ -149,7 +150,9 @@ class EmbeddingModel:
             convert_to_numpy: 是否转为numpy数组
 
         返回：
-            向量数组 shape=(n, dimension)
+            向量数组 shape=(n, dimension)；单文本返回 (dimension,)
+
+        契约：输入输出一一对应，空文本填零向量保持顺序与长度，不丢弃
         """
         # 统一处理为列表
         if isinstance(texts, str):
@@ -158,29 +161,33 @@ class EmbeddingModel:
         else:
             single_text = False
 
-        # 过滤空文本
-        valid_texts = [t for t in texts if t and t.strip()]
-        if not valid_texts:
-            logger.warning("输入包含空文本，返回零向量")
-            return np.zeros((len(texts), self.dimension))
+        # 区分有效文本与空文本，记录位置以保持顺序一一对应
+        valid_indices = [i for i, t in enumerate(texts) if t and t.strip()]
+        valid_texts = [texts[i] for i in valid_indices]
 
-        logger.debug(f"编码文本 | 数量: {len(valid_texts)} | batch_size: {batch_size}")
+        # 全空：返回与输入等长的零向量矩阵
+        if not valid_texts:
+            logger.warning("输入全部为空文本，返回零向量")
+            result = np.zeros((len(texts), self.dimension), dtype=np.float32)
+            return result[0] if single_text else result
+
+        logger.debug(f"编码文本 | 有效: {len(valid_texts)}/{len(texts)} | batch_size: {batch_size}")
 
         try:
-            # 使用模型编码
-            embeddings = self.model.encode(
+            valid_embeddings = self.model.encode(
                 valid_texts,
                 batch_size=batch_size,
                 show_progress_bar=show_progress,
-                convert_to_numpy=convert_to_numpy,
+                convert_to_numpy=True,
                 normalize_embeddings=self.normalize_embeddings
             )
 
-            # 如果是单个文本，返回一维向量
-            if single_text and convert_to_numpy:
-                return embeddings[0]
+            # 回填到与输入等长的矩阵，空文本位置保持零向量
+            result = np.zeros((len(texts), self.dimension), dtype=valid_embeddings.dtype)
+            for slot, orig_idx in enumerate(valid_indices):
+                result[orig_idx] = valid_embeddings[slot]
 
-            return embeddings
+            return result[0] if single_text else result
 
         except Exception as e:
             logger.error(f"文本编码失败: {e}")
@@ -190,7 +197,7 @@ class EmbeddingModel:
             self,
             queries: Union[str, List[str]],
             **kwargs
-    ) -> Union[np.ndarray, torch.Tensor]:
+    ) -> np.ndarray:
         """
         编码查询文本（为查询优化）
 
@@ -226,22 +233,17 @@ class EmbeddingModel:
             相似度分数
         """
         if metric == 'cosine':
-            # 余弦相似度
             if self.normalize_embeddings:
-                # 如果已归一化，直接点积
                 return np.dot(embeddings1, embeddings2.T)
             else:
-                # 未归一化，计算余弦
                 norm1 = np.linalg.norm(embeddings1, axis=-1, keepdims=True)
                 norm2 = np.linalg.norm(embeddings2, axis=-1, keepdims=True)
                 return np.dot(embeddings1, embeddings2.T) / (norm1 * norm2.T)
 
         elif metric == 'dot':
-            # 点积
             return np.dot(embeddings1, embeddings2.T)
 
         elif metric == 'euclidean':
-            # 欧氏距离（越小越相似）
             return -np.linalg.norm(
                 embeddings1[:, None] - embeddings2,
                 axis=-1
@@ -260,74 +262,10 @@ class EmbeddingModel:
             'max_seq_length': self.model.max_seq_length
         }
 
-    @classmethod
-    def list_recommended_models(cls) -> Dict:
-        """列出推荐的模型配置"""
-        return cls.RECOMMENDED_MODELS
-
     def __repr__(self) -> str:
         return (
             f"EmbeddingModel("
             f"model='{self.model_name}', "
-            f"dim={self.dimension}, "
+            f"dim={getattr(self, 'dimension', '?')}, "
             f"device='{self.device}')"
         )
-
-
-# =========================================
-# 💡 使用示例
-# =========================================
-"""
-from services.embedding.embedding_model import EmbeddingModel
-
-# 1. 基础使用
-model = EmbeddingModel(
-    model_name='BAAI/bge-large-zh-v1.5',
-    device='cuda'  # 或 'cpu'
-)
-
-# 编码单个文本
-text = "建筑结构荷载规范"
-embedding = model.encode(text)
-print(f"向量维度: {embedding.shape}")  # (1024,)
-
-# 编码多个文本
-texts = ["文本1", "文本2", "文本3"]
-embeddings = model.encode(texts, batch_size=32)
-print(f"向量矩阵: {embeddings.shape}")  # (3, 1024)
-
-
-# 2. 查询编码（为检索优化）
-query = "什么是建筑荷载？"
-query_embedding = model.encode_queries(query)
-
-
-# 3. 相似度计算
-text1 = "建筑结构设计"
-text2 = "结构荷载计算"
-
-emb1 = model.encode(text1)
-emb2 = model.encode(text2)
-
-similarity = model.similarity(emb1, emb2)
-print(f"相似度: {similarity:.4f}")
-
-
-# 4. 批量相似度
-query_emb = model.encode("建筑")
-doc_embs = model.encode(["建筑设计", "软件开发", "结构工程"])
-
-similarities = model.similarity(query_emb, doc_embs)
-print(f"相似度: {similarities}")
-
-
-# 5. 查看模型信息
-info = model.get_model_info()
-print(f"模型信息: {info}")
-
-
-# 6. 查看推荐模型
-models = EmbeddingModel.list_recommended_models()
-for key, config in models.items():
-    print(f"{key}: {config['description']}")
-"""

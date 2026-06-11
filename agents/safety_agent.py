@@ -231,11 +231,11 @@ class SafetyAnalysisAgent:
             result.overview = self._build_overview(project_id, overview_data, analysis_days)
 
             # Step 3: 隐患分类统计
-            type_data = self.safety_tools.get_defects_by_type(project_id)
+            type_data = self.safety_tools.analyze_defect_distribution(project_id)
             result.defects_by_type = self._build_defects_by_type(type_data)
 
             # Step 4: 频发问题
-            frequent_data = self.safety_tools.get_frequent_issues(project_id, days=analysis_days)
+            frequent_data = self.safety_tools.identify_frequent_issues(project_id, days=analysis_days)
             result.frequent_issues = self._build_frequent_issues(frequent_data)
             result.frequent_issue_count = len(result.frequent_issues)
 
@@ -245,8 +245,9 @@ class SafetyAnalysisAgent:
             result.urgent_defects = len([d for d in result.open_defects if d.urgency == "紧急"])
             result.overdue_defects = len([d for d in result.open_defects if d.days_open > 7])
 
-            # Step 6: 安全趋势
-            trend_data = self.safety_tools.analyze_safety_trend(project_id, days=analysis_days)
+            # Step 6: 安全趋势（工具签名为 months）
+            trend_months = max(1, analysis_days // 30)
+            trend_data = self.safety_tools.analyze_safety_trend(project_id, months=trend_months)
             result.trends = self._build_trends(trend_data)
             result.trend_direction = self._determine_trend_direction(result.trends)
 
@@ -258,7 +259,7 @@ class SafetyAnalysisAgent:
             result.alerts = self._generate_alerts(result)
 
             # Step 9: 生成建议
-            result.suggestions = self.safety_tools.get_safety_suggestions(project_id)
+            result.suggestions = self.safety_tools.get_improvement_suggestions(project_id)
 
             # Step 10: AI洞察
             if include_ai_insights:
@@ -352,66 +353,69 @@ class SafetyAnalysisAgent:
         )
 
     def _build_defects_by_type(self, data: Dict) -> List[DefectByType]:
-        """构建按类型统计"""
-        types = data.get("types", {})
+        """构建按类型统计（对齐 analyze_defect_distribution 返回结构）"""
+        by_type = data.get("distribution_by_type", {})
+        total = data.get("total_records", 0) or 0
         return [DefectByType(
             defect_type=t_key,
-            type_name=t_data.get("name", t_key),
-            count=t_data.get("count", 0),
-            high_level_count=t_data.get("high_level_count", 0),
-            open_count=t_data.get("open_count", 0),
-            percentage=t_data.get("percentage", 0)
-        ) for t_key, t_data in types.items()]
+            type_name=t_key,
+            count=count,
+            percentage=round(count / total * 100, 2) if total > 0 else 0
+        ) for t_key, count in by_type.items()]
 
     def _build_frequent_issues(self, data: List[Dict]) -> List[FrequentIssue]:
-        """构建频发问题列表"""
+        """构建频发问题列表（对齐 identify_frequent_issues 返回结构）"""
         return [FrequentIssue(
             issue_type=issue.get("defect_type", ""),
-            occurrence_count=issue.get("occurrence_count", 0),
-            recent_occurrences=issue.get("recent_count", 0),
-            trend=issue.get("trend", "stable"),
-            affected_areas=issue.get("affected_areas", []),
-            recommendation=issue.get("recommendation", "")
+            occurrence_count=issue.get("total_count", 0),
+            recent_occurrences=issue.get("high_level_count", 0),
+            trend=issue.get("trend", "平稳"),
+            recommendation=issue.get("severity", "")
         ) for issue in data]
 
     def _build_open_defects(self, data: List[Dict]) -> List[OpenDefect]:
-        """构建未闭环隐患列表"""
+        """构建未闭环隐患列表（对齐 get_open_defects 返回结构）"""
         return [OpenDefect(
-            defect_id=defect.get("defect_id", ""),
+            defect_id=str(defect.get("record_id", "")),
             defect_type=defect.get("defect_type", ""),
-            level=defect.get("level", "medium"),
+            level=defect.get("defect_level", "medium"),
             description=defect.get("description", ""),
-            location=defect.get("location", ""),
-            found_date=defect.get("found_date", ""),
-            deadline=defect.get("deadline", ""),
+            found_date=defect.get("check_date", "") or "",
             days_open=defect.get("days_open", 0),
-            urgency=defect.get("urgency", "normal"),
-            responsible=defect.get("responsible", ""),
-            status=defect.get("status", "open")
+            urgency=defect.get("urgency", "一般"),
+            responsible=defect.get("checker", ""),
+            status="open"
         ) for defect in data]
 
     def _build_trends(self, data: Dict) -> List[SafetyTrend]:
-        """构建趋势数据"""
-        weekly_data = data.get("weekly_data", [])
-        return [SafetyTrend(
-            period=week.get("period", ""),
-            checks=week.get("checks", 0),
-            pass_rate=week.get("pass_rate", 100),
-            defects_found=week.get("defects_found", 0),
-            defects_closed=week.get("defects_closed", 0),
-            high_level_defects=week.get("high_level_defects", 0)
-        ) for week in weekly_data]
+        """构建趋势数据（对齐 analyze_safety_trend 的 monthly_stats）"""
+        monthly_stats = data.get("monthly_stats", {})
+        trends = []
+        for month in sorted(monthly_stats.keys()):
+            stats = monthly_stats[month]
+            checks = stats.get("checks", 0)
+            total = stats.get("total", 0)
+            high = stats.get("high", 0)
+            pass_rate = round((checks - total) / checks * 100, 2) if checks > 0 else 100
+            trends.append(SafetyTrend(
+                period=month,
+                checks=checks,
+                pass_rate=pass_rate,
+                defects_found=total,
+                high_level_defects=high
+            ))
+        return trends
 
     def _determine_trend_direction(self, trends: List[SafetyTrend]) -> str:
-        """判断趋势方向"""
+        """判断趋势方向（基于高级别缺陷变化）"""
         if len(trends) < 2:
             return "stable"
-        recent_rates = [t.pass_rate for t in trends[-4:]]
-        if len(recent_rates) >= 2:
-            if recent_rates[-1] > recent_rates[0] + 2:
-                return "improving"
-            elif recent_rates[-1] < recent_rates[0] - 2:
-                return "deteriorating"
+        first_high = trends[0].high_level_defects
+        last_high = trends[-1].high_level_defects
+        if last_high > first_high * 1.2:
+            return "deteriorating"
+        elif last_high < first_high * 0.8:
+            return "improving"
         return "stable"
 
     def _build_rectification_plans(self, data: Dict) -> List[RectificationPlan]:
@@ -471,7 +475,7 @@ class SafetyAnalysisAgent:
             - 趋势: {result.trend_direction}
             """
             query = "基于以上安全分析结果，请提供专业的安全管理建议"
-            rag_result = await run_rag(query, context=context)
+            rag_result = await run_rag(query, extra_context=context)
             if rag_result and "answer" in rag_result:
                 insights = rag_result["answer"].split("\n")
                 return [i.strip() for i in insights if i.strip()]

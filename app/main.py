@@ -77,6 +77,13 @@ async def lifespan(app: FastAPI):
 
     # 日志系统已在导入时自动初始化
 
+    # 校验安全配置（生产环境占位密钥直接 fail-fast）
+    from core.security import check_security_config
+    check_security_config()
+
+    # 创建运行所需目录（data/processed 等）
+    settings.ensure_dirs()
+
     # 检查关键服务连接
     await check_services()
 
@@ -184,10 +191,10 @@ app = FastAPI(
 # 中间件配置
 # =========================================
 
-# CORS 配置
+# CORS 配置（限定来源，配合 allow_credentials）
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 生产环境应限制具体域名
+    allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

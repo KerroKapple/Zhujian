@@ -19,4 +19,16 @@ export default defineConfig({
       },
     },
   },
+  build: {
+    // 拆分大依赖为独立 chunk，避免单包过大、提升首屏缓存命中
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          echarts: ['echarts'],
+          'element-plus': ['element-plus', '@element-plus/icons-vue'],
+          vue: ['vue', 'vue-router', 'pinia'],
+        },
+      },
+    },
+  },
 })

@@ -86,7 +86,8 @@ class BasePrompt(ABC):
         variables = self.optional_variables.copy()
         variables.update(kwargs)
 
-        # 渲染模板
+        # safe_substitute 单趟替换、不二次扫描已插入的值，
+        # 故值内的 $/${} 不会被误替换，无需转义；缺失变量原样保留。
         try:
             prompt = Template(self.template).safe_substitute(variables)
             return prompt.strip()

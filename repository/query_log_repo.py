@@ -18,7 +18,7 @@
 from typing import List, Optional, Dict, Any, Tuple
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_, func, desc
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from models.query import QueryLog, QueryFeedback
 from core.constants import QueryType, AnswerQuality, RetrievalMode
@@ -111,13 +111,33 @@ class QueryLogRepository:
             logger.error(f"获取查询日志失败: {str(e)}")
             raise
 
+    def _apply_query_log_update(
+            self,
+            log_id: str,
+            **kwargs
+    ) -> Optional[QueryLog]:
+        """
+        无副作用 setter：仅写入内存对象字段，不 commit/不 rollback。
+        由调用方统一管理事务。
+        """
+        query_log = self.get_query_log_by_id(log_id)
+        if not query_log:
+            logger.warning(f"查询日志不存在: {log_id}")
+            return None
+
+        for key, value in kwargs.items():
+            if hasattr(query_log, key):
+                setattr(query_log, key, value)
+
+        return query_log
+
     def update_query_log(
             self,
             log_id: str,
             **kwargs
     ) -> Optional[QueryLog]:
         """
-        更新查询日志
+        更新查询日志（自带事务提交）
 
         参数：
             log_id: 查询日志ID
@@ -138,15 +158,9 @@ class QueryLogRepository:
             )
         """
         try:
-            query_log = self.get_query_log_by_id(log_id)
+            query_log = self._apply_query_log_update(log_id, **kwargs)
             if not query_log:
-                logger.warning(f"查询日志不存在: {log_id}")
                 return None
-
-            # 更新字段
-            for key, value in kwargs.items():
-                if hasattr(query_log, key):
-                    setattr(query_log, key, value)
 
             self.session.commit()
             self.session.refresh(query_log)
@@ -287,8 +301,8 @@ class QueryLogRepository:
 
             self.session.add(feedback)
 
-            # 同时更新查询日志的反馈信息
-            self.update_query_log(
+            # 同步查询日志反馈字段（无副作用 setter，由本方法末尾统一提交）
+            self._apply_query_log_update(
                 query_log_id,
                 user_rating=rating,
                 is_helpful=is_helpful
@@ -335,7 +349,11 @@ class QueryLogRepository:
 
             stats = {
                 "total_queries": query.count(),
-                "successful_queries": query.filter(QueryLog.has_answer == True).count(),
+                # 成功口径：有答案且无错误，与 failed_queries 不重叠
+                "successful_queries": query.filter(
+                    QueryLog.has_answer == True,
+                    QueryLog.has_error == False
+                ).count(),
                 "failed_queries": query.filter(QueryLog.has_error == True).count(),
                 "avg_total_time": 0,
                 "avg_retrieval_time": 0,
@@ -397,7 +415,7 @@ class QueryLogRepository:
         """
         try:
             # 计算起始日期
-            start_date = datetime.utcnow() - timedelta(days=days)
+            start_date = datetime.now(timezone.utc) - timedelta(days=days)
 
             # 按查询内容分组统计
             hot_queries = self.session.query(
@@ -465,7 +483,7 @@ class QueryLogRepository:
             List[Dict]: 每日统计数据
         """
         try:
-            start_date = datetime.utcnow() - timedelta(days=days)
+            start_date = datetime.now(timezone.utc) - timedelta(days=days)
 
             # 按日期分组统计
             daily_stats = self.session.query(

@@ -2,9 +2,9 @@ import request from './request'
 
 // ===== 智能问答 =====
 export const qaApi = {
-  ask: (data) => request.post('/qa/ask', data),
   chat: (data) => request.post('/qa/chat', data),
-  feedback: (queryId, params) => request.get(`/qa/feedback/${queryId}`, { params }),
+  // 反馈契约：POST /qa/feedback/{queryId}，rating/comment 为 query 参数
+  feedback: (queryId, params) => request.post(`/qa/feedback/${queryId}`, null, { params }),
 }
 
 // ===== 文档管理 =====

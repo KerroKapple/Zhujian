@@ -12,6 +12,7 @@
       </div>
 
       <el-table :data="rows" v-loading="loading" stripe>
+        <template #empty><el-empty description="暂无项目，点击「新建项目」开始" /></template>
         <el-table-column prop="id" label="项目ID" width="120" show-overflow-tooltip />
         <el-table-column prop="name" label="项目名称" min-width="180" />
         <el-table-column prop="status" label="状态" width="120" />
@@ -61,7 +62,8 @@ async function load() {
   loading.value = true
   try {
     const res = await projectApi.list({ skip: 0, limit: 100 })
-    rows.value = res.data || res.items || res.projects || []
+    // 后端 PaginationResponse 真实返回键：data
+    rows.value = res.data || []
   } finally {
     loading.value = false
   }

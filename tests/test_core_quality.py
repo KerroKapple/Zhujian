@@ -1,5 +1,5 @@
 """核心质量回归测试：覆盖本次修复/补全的关键逻辑（不依赖外部服务与重型 ML 依赖）"""
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -144,7 +144,7 @@ def test_fine_grained_expired_record_skipped(monkeypatch):
     expired = SimpleNamespace(
         resource_id="doc1", can_read=True, can_write=False,
         can_delete=False, can_share=False,
-        valid_from=None, valid_until=datetime.utcnow() - timedelta(days=1),
+        valid_from=None, valid_until=datetime.now(timezone.utc) - timedelta(days=1),
     )
     _patch_session(monkeypatch, [expired])
     # 过期记录被跳过，且无其它记录 -> None

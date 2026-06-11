@@ -17,6 +17,32 @@
               </el-collapse-item>
             </el-collapse>
           </div>
+
+          <div v-if="m.role === 'assistant' && m.queryId" class="feedback">
+            <el-divider content-position="left">完善内容</el-divider>
+            <div class="fb-row">
+              <span class="fb-label">答案评分</span>
+              <el-rate v-model="m.rating" :max="5" />
+            </div>
+            <el-input
+              v-model="m.comment"
+              type="textarea"
+              :rows="2"
+              resize="none"
+              maxlength="500"
+              placeholder="补充反馈（可选）"
+              class="fb-comment"
+            />
+            <el-button
+              size="small"
+              type="primary"
+              :loading="m.fbLoading"
+              :disabled="!m.rating || m.fbDone"
+              @click="submitFeedback(m)"
+            >
+              {{ m.fbDone ? '已提交' : '提交反馈' }}
+            </el-button>
+          </div>
         </div>
       </div>
     </div>
@@ -44,6 +70,7 @@
 
 <script setup>
 import { ref, nextTick } from 'vue'
+import { ElMessage } from 'element-plus'
 import { qaApi } from '@/api'
 
 const messages = ref([])
@@ -74,12 +101,32 @@ async function send() {
       role: 'assistant',
       content: res.answer || '（无回答）',
       sources: res.sources || [],
+      // 反馈需要 query_id；后端未返回时用本地标识兜底
+      queryId: res.metadata?.query_id || res.query_id || `q_${Date.now()}`,
+      rating: 0,
+      comment: '',
+      fbLoading: false,
+      fbDone: false,
     })
   } catch (e) {
     messages.value.push({ role: 'assistant', content: '请求失败，请稍后重试。' })
   } finally {
     loading.value = false
     await scrollBottom()
+  }
+}
+
+async function submitFeedback(m) {
+  if (!m.rating) return ElMessage.warning('请先评分')
+  m.fbLoading = true
+  try {
+    await qaApi.feedback(m.queryId, { rating: m.rating, comment: m.comment || undefined })
+    m.fbDone = true
+    ElMessage.success('感谢您的反馈')
+  } catch (e) {
+    /* 错误提示由请求拦截器统一处理 */
+  } finally {
+    m.fbLoading = false
   }
 }
 </script>
@@ -124,6 +171,22 @@ async function send() {
   color: #555;
   font-size: 13px;
   line-height: 1.6;
+}
+.feedback {
+  margin-top: 8px;
+}
+.fb-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.fb-label {
+  font-size: 13px;
+  color: #666;
+}
+.fb-comment {
+  margin-bottom: 8px;
 }
 .composer {
   border-top: 1px solid #eef0f3;

@@ -1,14 +1,15 @@
 """
 API v1 路由模块
 
-包含所有 v1 版本的 API 路由
+聚合 v1 版本的所有路由模块，供 app.main 统一注册。
+缺失的可选模块以 None 占位，避免导入期连锁失败。
 """
 
 from app.api.v1 import qa
 from app.api.v1 import document
 from app.api.v1 import admin
 
-# 可选模块
+# 可选模块：施工图、知识图谱、项目管理
 try:
     from app.api.v1 import projects
 except ImportError:

@@ -32,7 +32,7 @@
 from dataclasses import dataclass, field, asdict
 from typing import List, Dict, Any, Optional
 from enum import Enum
-from datetime import datetime
+from datetime import datetime, timezone
 import uuid
 
 
@@ -163,9 +163,9 @@ class DimensionType(str, Enum):
 class GraphNode:
     """图节点基类"""
     id: str
-    label: NodeLabel
+    label: NodeLabel = NodeLabel.DOCUMENT  # 默认值，由各子类 __post_init__ 覆写
     properties: Dict[str, Any] = field(default_factory=dict)
-    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
+    created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
     def to_dict(self) -> Dict:
         """转换为字典"""
@@ -365,8 +365,9 @@ class AnnotationNode(GraphNode):
 
 def create_component_node(
     code: str,
-    component_type: str,
+    component_type: str = "other",
     doc_id: str = None,
+    id: str = None,
     **kwargs
 ) -> ComponentNode:
     """
@@ -376,6 +377,7 @@ def create_component_node(
         code: 构件编号
         component_type: 构件类型字符串
         doc_id: 文档 ID
+        id: 节点 ID（缺省自动生成）
         **kwargs: 其他属性
     """
     # 映射构件类型
@@ -390,7 +392,7 @@ def create_component_node(
     comp_type = type_mapping.get(component_type.lower(), ComponentType.OTHER)
 
     node = ComponentNode(
-        id=GraphNode.generate_id("comp"),
+        id=id or GraphNode.generate_id("comp"),
         code=code,
         component_type=comp_type,
         **kwargs

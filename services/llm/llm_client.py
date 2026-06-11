@@ -17,13 +17,12 @@ LLM 客户端
 ========================================
 """
 
-import os
 import time
 import asyncio
 from typing import List, Dict, Optional, Generator, AsyncGenerator, Union
 
-import httpx
 from openai import OpenAI, AsyncOpenAI
+from openai import APITimeoutError, RateLimitError, APIConnectionError
 from loguru import logger
 
 from core.config import settings
@@ -49,8 +48,8 @@ class LLMClient:
         api_key: Optional[str] = None,
         api_base: Optional[str] = None,
         model: Optional[str] = None,
-        temperature: float = 0.7,
-        max_tokens: int = 2048,
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
         timeout: int = 60,
         max_retries: int = 3
     ):
@@ -58,23 +57,28 @@ class LLMClient:
         初始化 LLM 客户端
 
         参数：
-            api_key: API 密钥（默认从环境变量读取）
-            api_base: API 基础 URL（默认从配置读取）
-            model: 模型名称（默认从配置读取）
-            temperature: 生成温度（0-1）
-            max_tokens: 最大生成 token 数
+            api_key: API 密钥（默认从 settings.LLM_API_KEY 读取）
+            api_base: API 基础 URL（默认从 settings.LLM_API_BASE 读取）
+            model: 模型名称（默认从 settings.LLM_MODEL_NAME 读取）
+            temperature: 生成温度（默认 settings.LLM_TEMPERATURE）
+            max_tokens: 最大生成 token 数（默认 settings.LLM_MAX_TOKENS）
             timeout: 请求超时时间（秒）
             max_retries: 最大重试次数
         """
-        # API 配置
-        self.api_key = api_key or os.getenv("OPENAI_API_KEY", "sk-placeholder")
-        self.api_base = api_base or os.getenv("OPENAI_API_BASE", "https://api.openai.com/v1")
-        self.model = model or os.getenv("LLM_MODEL", "gpt-3.5-turbo")
+        # API 配置：单一事实源为 settings，缺 key 显式报错而非静默连真实 OpenAI
+        self.api_key = api_key or settings.LLM_API_KEY
+        if not self.api_key:
+            raise ValueError(
+                "缺少 LLM API 密钥，请设置 settings.LLM_API_KEY 或传入 api_key"
+            )
+        self.api_base = api_base or settings.LLM_API_BASE
+        self.model = model or settings.LLM_MODEL_NAME
 
         # 生成参数
-        self.temperature = temperature
-        self.max_tokens = max_tokens
+        self.temperature = temperature if temperature is not None else settings.LLM_TEMPERATURE
+        self.max_tokens = max_tokens if max_tokens is not None else settings.LLM_MAX_TOKENS
         self.timeout = timeout
+        # 由 SDK 自身重试交给指数退避循环处理，避免双重重试
         self.max_retries = max_retries
 
         # 初始化客户端
@@ -96,11 +100,12 @@ class LLMClient:
     def sync_client(self) -> OpenAI:
         """获取同步客户端（懒加载）"""
         if self._sync_client is None:
+            # SDK 重试关闭，统一由 _retry_sync 做分类指数退避
             self._sync_client = OpenAI(
                 api_key=self.api_key,
                 base_url=self.api_base,
                 timeout=self.timeout,
-                max_retries=self.max_retries
+                max_retries=0
             )
         return self._sync_client
 
@@ -112,9 +117,42 @@ class LLMClient:
                 api_key=self.api_key,
                 base_url=self.api_base,
                 timeout=self.timeout,
-                max_retries=self.max_retries
+                max_retries=0
             )
         return self._async_client
+
+    # 可重试错误：超时、限流、连接错误（指数退避）；其余错误立即抛出
+    _RETRYABLE = (APITimeoutError, RateLimitError, APIConnectionError)
+
+    def _retry_sync(self, call):
+        """同步调用的分类指数退避重试"""
+        last_exc = None
+        for attempt in range(max(1, self.max_retries)):
+            try:
+                return call()
+            except self._RETRYABLE as e:
+                last_exc = e
+                delay = 2 ** attempt
+                logger.warning(
+                    f"LLM 可重试错误 {type(e).__name__}，第 {attempt + 1}/{self.max_retries} 次，{delay}s 后重试"
+                )
+                time.sleep(delay)
+        raise last_exc
+
+    async def _retry_async(self, call):
+        """异步调用的分类指数退避重试"""
+        last_exc = None
+        for attempt in range(max(1, self.max_retries)):
+            try:
+                return await call()
+            except self._RETRYABLE as e:
+                last_exc = e
+                delay = 2 ** attempt
+                logger.warning(
+                    f"LLM 可重试错误 {type(e).__name__}，第 {attempt + 1}/{self.max_retries} 次，{delay}s 后重试"
+                )
+                await asyncio.sleep(delay)
+        raise last_exc
 
     def chat(
         self,
@@ -144,13 +182,13 @@ class LLMClient:
         try:
             self.total_requests += 1
 
-            response = self.sync_client.chat.completions.create(
+            response = self._retry_sync(lambda: self.sync_client.chat.completions.create(
                 model=model or self.model,
                 messages=messages,
-                temperature=temperature or self.temperature,
-                max_tokens=max_tokens or self.max_tokens,
+                temperature=temperature if temperature is not None else self.temperature,
+                max_tokens=max_tokens if max_tokens is not None else self.max_tokens,
                 **kwargs
-            )
+            ))
 
             # 统计 token
             if hasattr(response, 'usage') and response.usage:
@@ -187,13 +225,13 @@ class LLMClient:
         try:
             self.total_requests += 1
 
-            response = await self.async_client.chat.completions.create(
+            response = await self._retry_async(lambda: self.async_client.chat.completions.create(
                 model=model or self.model,
                 messages=messages,
-                temperature=temperature or self.temperature,
-                max_tokens=max_tokens or self.max_tokens,
+                temperature=temperature if temperature is not None else self.temperature,
+                max_tokens=max_tokens if max_tokens is not None else self.max_tokens,
                 **kwargs
-            )
+            ))
 
             # 统计 token
             if hasattr(response, 'usage') and response.usage:
@@ -233,14 +271,14 @@ class LLMClient:
         try:
             self.total_requests += 1
 
-            stream = self.sync_client.chat.completions.create(
+            stream = self._retry_sync(lambda: self.sync_client.chat.completions.create(
                 model=model or self.model,
                 messages=messages,
-                temperature=temperature or self.temperature,
-                max_tokens=max_tokens or self.max_tokens,
+                temperature=temperature if temperature is not None else self.temperature,
+                max_tokens=max_tokens if max_tokens is not None else self.max_tokens,
                 stream=True,
                 **kwargs
-            )
+            ))
 
             for chunk in stream:
                 if chunk.choices[0].delta.content:
@@ -270,14 +308,14 @@ class LLMClient:
         try:
             self.total_requests += 1
 
-            stream = await self.async_client.chat.completions.create(
+            stream = await self._retry_async(lambda: self.async_client.chat.completions.create(
                 model=model or self.model,
                 messages=messages,
-                temperature=temperature or self.temperature,
-                max_tokens=max_tokens or self.max_tokens,
+                temperature=temperature if temperature is not None else self.temperature,
+                max_tokens=max_tokens if max_tokens is not None else self.max_tokens,
                 stream=True,
                 **kwargs
-            )
+            ))
 
             async for chunk in stream:
                 if chunk.choices[0].delta.content:

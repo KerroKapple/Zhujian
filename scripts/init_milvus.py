@@ -25,6 +25,7 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from repository.vector_repo import VectorRepository
+from services.retrieval.vector.milvus_client import milvus_client
 from core.logger import logger
 from core.constants import MilvusCollection, MilvusIndexParams
 
@@ -113,8 +114,8 @@ def init_milvus():
             logger.info(f"  - 向量数量: {stats['num_entities']}")
             logger.info(f"  - 描述: {stats['description']}")
 
-        # 断开连接
-        vector_repo.disconnect()
+        # 关闭连接（单例统一管理）
+        milvus_client.close()
 
         logger.info("\n" + "=" * 60)
         logger.info("✓ Milvus向量数据库初始化完成！")
@@ -218,7 +219,7 @@ def check_milvus_status():
         logger.info(f"总向量数: {total_vectors:,}")
         logger.info("=" * 60)
 
-        vector_repo.disconnect()
+        milvus_client.close()
 
         return True
 

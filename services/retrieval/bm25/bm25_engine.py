@@ -22,10 +22,18 @@ from typing import List, Dict, Tuple, Optional
 from pathlib import Path
 
 import numpy as np
-from rank_bm25 import BM25Okapi
 from loguru import logger
 
 from utils.text_utils import TextProcessor
+
+# rank_bm25 为轻量依赖，已安装；加守卫保持与其他模块一致，缺失不阻塞 import
+try:
+    from rank_bm25 import BM25Okapi
+    RANK_BM25_AVAILABLE = True
+except ImportError:
+    BM25Okapi = None
+    RANK_BM25_AVAILABLE = False
+    logger.warning("rank_bm25 未安装，BM25 检索不可用。请运行: uv add rank-bm25")
 
 
 class BM25Retriever:

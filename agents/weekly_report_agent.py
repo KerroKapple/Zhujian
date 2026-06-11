@@ -327,10 +327,10 @@ class WeeklyReportAgent:
             section.risk_level = overview.get("risk_level", "green")
             section.budget_usage_rate = overview.get("budget_usage_rate", 0)
 
-            # 获取分类统计
+            # 获取分类统计（get_cost_by_category 在 categories 键下返回各类别 dict）
             by_category = self.cost_tools.get_cost_by_category(project_id)
             section.category_breakdown = {
-                k: v for k, v in by_category.items()
+                k: v for k, v in by_category.get("categories", {}).items()
                 if isinstance(v, dict)
             }
 
@@ -373,15 +373,15 @@ class WeeklyReportAgent:
             open_defects = self.safety_tools.get_open_defects(project_id)
             section.open_defect_list = open_defects[:5]  # 取前5个
 
-            # 获取趋势
+            # 获取趋势（analyze_safety_trend 返回 monthly_stats）
             trend = self.safety_tools.analyze_safety_trend(project_id, months=1)
-            monthly_data = trend.get("monthly_data", {})
-            if monthly_data:
-                values = list(monthly_data.values())
-                if len(values) >= 2:
-                    if values[-1].get("total", 0) > values[0].get("total", 0) * 1.2:
+            monthly_stats = trend.get("monthly_stats", {})
+            if monthly_stats:
+                ordered = [monthly_stats[m] for m in sorted(monthly_stats.keys())]
+                if len(ordered) >= 2:
+                    if ordered[-1].get("total", 0) > ordered[0].get("total", 0) * 1.2:
                         section.trend = "恶化"
-                    elif values[-1].get("total", 0) < values[0].get("total", 0) * 0.8:
+                    elif ordered[-1].get("total", 0) < ordered[0].get("total", 0) * 0.8:
                         section.trend = "好转"
                     else:
                         section.trend = "平稳"
@@ -440,7 +440,7 @@ class WeeklyReportAgent:
         if section.overrun_items:
             top_overrun = section.overrun_items[0] if section.overrun_items else None
             if top_overrun:
-                issues.append(f"{top_overrun.get('cost_item', '未知项目')}超支严重")
+                issues.append(f"{top_overrun.get('item', '未知项目')}超支严重")
 
         return highlights, issues
 

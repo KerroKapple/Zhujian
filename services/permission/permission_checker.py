@@ -20,12 +20,13 @@
 
 from enum import Enum
 from typing import Optional, List, Dict, Any
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from functools import wraps
 
 from fastapi import HTTPException, Depends, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import jwt, JWTError
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 from loguru import logger
 
@@ -140,10 +141,12 @@ ROLE_ACTION_MAP: Dict[UserRole, List[ActionType]] = {
 # JWT 配置
 # =========================================
 
-# 从配置获取，如果没有则使用默认值
-JWT_SECRET_KEY = getattr(settings, 'JWT_SECRET_KEY', 'your-secret-key-change-in-production')
+# JWT 密钥强制从配置读取，缺失即 fail-fast，禁止回退硬编码默认串
+JWT_SECRET_KEY = settings.JWT_SECRET_KEY
+if not JWT_SECRET_KEY:
+    raise RuntimeError("JWT_SECRET_KEY 未配置，请在 .env 中设置")
 JWT_ALGORITHM = "HS256"
-JWT_EXPIRE_HOURS = getattr(settings, 'JWT_EXPIRE_HOURS', 24)
+JWT_EXPIRE_HOURS = settings.JWT_EXPIRE_MINUTES / 60
 
 
 # =========================================
@@ -196,14 +199,14 @@ class PermissionChecker:
         返回：
             JWT 令牌字符串
         """
-        expire = datetime.utcnow() + timedelta(hours=JWT_EXPIRE_HOURS)
+        expire = datetime.now(timezone.utc) + timedelta(hours=JWT_EXPIRE_HOURS)
 
         payload = {
             "sub": user_id,
             "username": username,
             "role": role.value if isinstance(role, UserRole) else role,
             "exp": expire,
-            "iat": datetime.utcnow()
+            "iat": datetime.now(timezone.utc)
         }
 
         if extra_data:
@@ -496,14 +499,18 @@ class PermissionChecker:
 
         db: Session = SessionLocal()
         try:
-            now = datetime.utcnow()
-            # 优先匹配具体资源，其次匹配资源类型通配（resource_id 为空）
+            now = datetime.now(timezone.utc)
+            # 优先匹配具体资源，其次匹配资源类型通配（resource_id 为 NULL）
+            # 注意：SQL `IN (..., NULL)` 永不匹配 NULL，须用 or_ + is_(None)
             records = (
                 db.query(UserPermission)
                 .filter(
                     UserPermission.user_id == user_id,
                     UserPermission.resource_type == resource_type.value,
-                    UserPermission.resource_id.in_([resource_id, None]),
+                    or_(
+                        UserPermission.resource_id == resource_id,
+                        UserPermission.resource_id.is_(None),
+                    ),
                 )
                 .all()
             )
@@ -601,7 +608,7 @@ class PermissionChecker:
         key = self._get_cache_key(user_id, resource_type, resource_id)
         self._cache[key] = {
             "value": has_permission,
-            "expires_at": datetime.utcnow() + timedelta(seconds=self._cache_ttl)
+            "expires_at": datetime.now(timezone.utc) + timedelta(seconds=self._cache_ttl)
         }
 
     def get_cached_permission(
@@ -617,7 +624,7 @@ class PermissionChecker:
         if not cached:
             return None
 
-        if datetime.utcnow() > cached["expires_at"]:
+        if datetime.now(timezone.utc) > cached["expires_at"]:
             del self._cache[key]
             return None
 

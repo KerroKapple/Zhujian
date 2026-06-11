@@ -56,27 +56,19 @@ cd Enterprise_RAG
 cd docker
 docker-compose up -d
 
-# 3. 创建 Python 虚拟环境
+# 3. 安装依赖（uv 自动管理虚拟环境）
 cd ..
-python -m venv venv
+uv sync
 
-# Windows
-venv\Scripts\activate
-# Linux/Mac
-source venv/bin/activate
-
-# 4. 安装依赖
-pip install -r requirements.txt
-
-# 5. 配置环境变量
+# 4. 配置环境变量
 cp .env.example .env
 # 编辑 .env 文件，配置数据库密码和 LLM API
 
-# 6. 初始化数据库
-python scripts/init_db.py
+# 5. 初始化数据库
+uv run python scripts/init_db.py
 
-# 7. 启动应用
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+# 6. 启动应用
+uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 # 8. 访问系统
 # API 文档: http://localhost:8000/docs
@@ -116,32 +108,21 @@ rag_minio       Up        0.0.0.0:9000-9001->9000-9001/tcp
 ### 步骤 2: 配置 Python 环境
 
 ```bash
-# 创建虚拟环境
-python -m venv venv
-
-# 激活虚拟环境
-# Windows PowerShell
-.\venv\Scripts\Activate.ps1
-# Windows CMD
-venv\Scripts\activate.bat
-# Linux/Mac
-source venv/bin/activate
-
-# 升级 pip
-pip install --upgrade pip
-
-# 安装依赖
-pip install -r requirements.txt
+# 安装依赖（依赖见 pyproject.toml，uv 自动创建并管理虚拟环境）
+uv sync
 ```
 
-**注意：** 如果安装 `paddlepaddle` 失败，可以尝试：
+**按需安装重型层（OCR/向量化）：** 默认不安装，需要时再装。
 
 ```bash
 # CPU 版本
-pip install paddlepaddle -i https://pypi.tuna.tsinghua.edu.cn/simple
+uv add paddlepaddle
 
 # GPU 版本 (CUDA 11.8)
-pip install paddlepaddle-gpu -i https://pypi.tuna.tsinghua.edu.cn/simple
+uv add paddlepaddle-gpu
+
+# 向量化模型依赖
+uv add torch sentence-transformers
 ```
 
 ### 步骤 3: 配置环境变量
@@ -198,10 +179,10 @@ LLM_MODEL=Qwen/Qwen2-7B-Instruct
 
 ```bash
 # 初始化 PostgreSQL 表结构
-python scripts/init_db.py
+uv run python scripts/init_db.py
 
 # 初始化 Milvus 集合
-python scripts/init_milvus.py
+uv run python scripts/init_milvus.py
 ```
 
 ### 步骤 5: 导入文档（可选）
@@ -209,7 +190,7 @@ python scripts/init_milvus.py
 ```bash
 # 将文档放入 data/raw_docs/ 目录
 # 执行文档导入
-python scripts/ingest_docs.py --input data/raw_docs/
+uv run python scripts/ingest_docs.py --input data/raw_docs/
 ```
 
 ### 步骤 6: 启动应用
@@ -217,13 +198,13 @@ python scripts/ingest_docs.py --input data/raw_docs/
 **开发模式：**
 
 ```bash
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 **生产模式：**
 
 ```bash
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
+uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
 ```
 
 ---
@@ -279,10 +260,10 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
 
 ```bash
 # 安装 Gunicorn
-pip install gunicorn
+uv add gunicorn
 
 # 启动（推荐配置）
-gunicorn app.main:app \
+uv run gunicorn app.main:app \
     -w 4 \
     -k uvicorn.workers.UvicornWorker \
     -b 0.0.0.0:8000 \
@@ -306,9 +287,8 @@ Type=simple
 User=www-data
 Group=www-data
 WorkingDirectory=/opt/enterprise_rag
-Environment="PATH=/opt/enterprise_rag/venv/bin"
 EnvironmentFile=/opt/enterprise_rag/.env
-ExecStart=/opt/enterprise_rag/venv/bin/gunicorn app.main:app \
+ExecStart=/usr/local/bin/uv run gunicorn app.main:app \
     -w 4 \
     -k uvicorn.workers.UvicornWorker \
     -b 0.0.0.0:8000 \
@@ -390,9 +370,12 @@ server {
 创建 `Dockerfile`：
 
 ```dockerfile
-FROM python:3.10-slim
+FROM python:3.14-slim
 
 WORKDIR /app
+
+# 安装 uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
 # 安装系统依赖
 RUN apt-get update && apt-get install -y \
@@ -400,11 +383,9 @@ RUN apt-get update && apt-get install -y \
     libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# 复制依赖文件
-COPY requirements.txt .
-
-# 安装 Python 依赖
-RUN pip install --no-cache-dir -r requirements.txt
+# 复制依赖定义并安装（按锁文件还原，不安装项目自身）
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-install-project
 
 # 复制应用代码
 COPY . .
@@ -413,7 +394,7 @@ COPY . .
 EXPOSE 8000
 
 # 启动命令
-CMD ["gunicorn", "app.main:app", "-w", "4", "-k", "uvicorn.workers.UvicornWorker", "-b", "0.0.0.0:8000"]
+CMD ["uv", "run", "gunicorn", "app.main:app", "-w", "4", "-k", "uvicorn.workers.UvicornWorker", "-b", "0.0.0.0:8000"]
 ```
 
 构建并运行：

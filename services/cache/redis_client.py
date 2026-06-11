@@ -45,6 +45,7 @@ class RedisClient:
 
     _instance = None
     _pool = None
+    _initialized = False
 
     def __new__(cls):
         """单例模式：确保只有一个实例"""
@@ -61,6 +62,10 @@ class RedisClient:
         - 自动管理连接生命周期
         - 支持并发访问
         """
+        if self._initialized:
+            return
+        self._initialized = True
+
         if self._pool is None:
             self._init_pool()
 
@@ -118,10 +123,10 @@ class RedisClient:
             if value is None:
                 return None
 
-            # 尝试反序列化JSON
+            # decode_responses=True 时 value 必为 str，尝试反序列化JSON
             try:
                 return json.loads(value)
-            except (json.JSONDecodeError, TypeError):
+            except json.JSONDecodeError:
                 return value
 
         except Exception as e:

@@ -23,7 +23,7 @@ Agent 调度 API 接口 (修复版)
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Optional, Dict, Any
 from datetime import date, datetime
 from enum import Enum
@@ -75,14 +75,15 @@ class WeeklyReportRequest(BaseModel):
     format: ReportFormatEnum = Field(ReportFormatEnum.MARKDOWN, description="输出格式")
     include_ai_suggestions: bool = Field(True, description="是否包含AI建议")
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "project_id": "P001",
                 "format": "markdown",
                 "include_ai_suggestions": True
             }
         }
+    )
 
 
 class RiskAnalysisRequest(BaseModel):
@@ -347,7 +348,14 @@ async def quick_cost_check(
     try:
         agent = get_cost_agent(db)
         result = await agent.quick_cost_check(project_id)
+        if not result.get("success", False):
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=result.get("error", "快速成本检查失败")
+            )
         return result
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"快速成本检查失败: {e}")
         raise HTTPException(
@@ -418,7 +426,14 @@ async def quick_progress_check(
     try:
         agent = get_progress_agent(db)
         result = await agent.quick_progress_check(project_id)
+        if not result.get("success", False):
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=result.get("error", "快速进度检查失败")
+            )
         return result
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"快速进度检查失败: {e}")
         raise HTTPException(
@@ -490,7 +505,14 @@ async def quick_safety_check(
     try:
         agent = get_safety_agent(db)
         result = await agent.quick_safety_check(project_id, days=days)
+        if not result.get("success", False):
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=result.get("error", "快速安全检查失败")
+            )
         return result
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"快速安全检查失败: {e}")
         raise HTTPException(
@@ -529,8 +551,9 @@ async def get_project_dashboard(
             "safety": safety_overview.get("risk_level", "green")
         }
 
-        level_priority = {"red": 0, "critical": 0, "high": 1, "yellow": 1, "medium": 2, "green": 2, "low": 3}
-        overall_risk = min(risk_levels.values(), key=lambda x: level_priority.get(x, 3))
+        # 各工具统一返回 green/yellow/red 三级体系
+        level_priority = {"red": 0, "yellow": 1, "green": 2}
+        overall_risk = min(risk_levels.values(), key=lambda x: level_priority.get(x, 2))
 
         return {
             "project_id": project_id,

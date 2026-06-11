@@ -152,15 +152,19 @@ class RagPipeline:
         if self._bm25_retriever is None:
             self._bm25_retriever = BM25Retriever()
 
-        # 5. 初始化向量检索器
+        # 5. 初始化向量检索器（失败则置 None，HybridRetriever 退化 BM25-only）
         if self._vector_retriever is None:
-            self._vector_retriever = VectorRetriever(
-                collection_name=settings.MILVUS_COLLECTION_STANDARD,
-                embedder=self._embedder,
-                host=settings.MILVUS_HOST,
-                port=str(settings.MILVUS_PORT),
-                dim=settings.VECTOR_DIM
-            )
+            try:
+                self._vector_retriever = VectorRetriever(
+                    collection_name=settings.MILVUS_COLLECTION_STANDARD,
+                    embedder=self._embedder,
+                    host=settings.MILVUS_HOST,
+                    port=str(settings.MILVUS_PORT),
+                    dim=settings.VECTOR_DIM
+                )
+            except Exception as e:
+                logger.warning(f"向量检索器初始化失败，退化为 BM25-only: {e}")
+                self._vector_retriever = None
 
         # 6. 初始化重排序器
         if self._reranker is None:

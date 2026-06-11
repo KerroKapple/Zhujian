@@ -22,6 +22,7 @@
       </div>
 
       <el-table :data="rows" v-loading="loading" stripe>
+        <template #empty><el-empty description="暂无施工图，请上传 PDF 图纸" /></template>
         <el-table-column prop="filename" label="图纸" min-width="200" show-overflow-tooltip />
         <el-table-column label="状态" width="120">
           <template #default="{ row }">
@@ -37,7 +38,7 @@
         </el-table-column>
         <el-table-column label="操作" width="180" fixed="right">
           <template #default="{ row }">
-            <el-button link type="primary" @click="viewEntities(row)">查看实体</el-button>
+            <el-button link type="primary" :loading="entityLoading" @click="viewEntities(row)">查看实体</el-button>
             <el-button link type="danger" @click="remove(row)">删除</el-button>
           </template>
         </el-table-column>
@@ -75,6 +76,7 @@ import { drawingApi } from '@/api'
 const rows = ref([])
 const loading = ref(false)
 const uploading = ref(false)
+const entityLoading = ref(false)
 const drawingType = ref('structural')
 const enableOcr = ref(true)
 const syncNeo4j = ref(true)
@@ -88,7 +90,8 @@ async function load() {
   loading.value = true
   try {
     const res = await drawingApi.list({ page: 1, page_size: 50 })
-    rows.value = res.drawings || res.documents || res.items || []
+    // 后端真实返回键：drawings
+    rows.value = res.drawings || []
   } finally {
     loading.value = false
   }
@@ -112,21 +115,25 @@ async function handleUpload({ file }) {
 }
 
 async function viewEntities(row) {
-  const id = row.document_id || row.doc_id
-  const res = await drawingApi.entities(id)
-  const e = res.entities || {}
-  entities.components = e.components || []
-  entities.materials = e.materials || []
-  entities.dimensions = e.dimensions || []
-  entities.specifications = e.specifications || []
-  summary.value = res.summary || null
-  entityTab.value = 'components'
-  drawer.value = true
+  entityLoading.value = true
+  try {
+    const res = await drawingApi.entities(row.document_id)
+    const e = res.entities || {}
+    entities.components = e.components || []
+    entities.materials = e.materials || []
+    entities.dimensions = e.dimensions || []
+    entities.specifications = e.specifications || []
+    summary.value = res.summary || null
+    entityTab.value = 'components'
+    drawer.value = true
+  } finally {
+    entityLoading.value = false
+  }
 }
 
 async function remove(row) {
   await ElMessageBox.confirm(`确认删除「${row.filename}」？`, '提示', { type: 'warning' })
-  await drawingApi.remove(row.document_id || row.doc_id)
+  await drawingApi.remove(row.document_id)
   ElMessage.success('已删除')
   load()
 }

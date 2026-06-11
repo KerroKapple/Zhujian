@@ -17,7 +17,7 @@
 ========================================
 """
 
-from fastapi import APIRouter, UploadFile, File, HTTPException, status, Query
+from fastapi import APIRouter, UploadFile, File, HTTPException, status, Query, Body
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict
 from datetime import datetime
@@ -169,7 +169,8 @@ async def upload_document(
     description="批量上传多个文档"
 )
 async def upload_documents_batch(
-        files: List[UploadFile] = File(..., description="上传的文件列表")
+        files: List[UploadFile] = File(..., description="上传的文件列表"),
+        category: Optional[str] = Query(None, description="文档分类")
 ):
     """
     批量上传接口
@@ -180,7 +181,7 @@ async def upload_documents_batch(
 
     for file in files:
         try:
-            result = await upload_document(file)
+            result = await upload_document(file, category=category)
             results.append({
                 "filename": file.filename,
                 "success": True,
@@ -227,15 +228,7 @@ async def list_documents(
     支持分页和筛选
     """
     try:
-        # 这里应该从数据库查询
-        # documents = await db.get_documents(
-        #     page=page,
-        #     page_size=page_size,
-        #     category=category,
-        #     status=status
-        # )
-
-        # 临时示例数据
+        # TODO: 接入文档元数据 service（当前无对应 service 层，返回占位示例）
         documents = [
             DocumentInfo(
                 doc_id="doc_001",
@@ -395,7 +388,7 @@ async def delete_document(doc_id: str):
     description="批量删除多个文档"
 )
 async def delete_documents_batch(
-        doc_ids: List[str] = Field(..., description="文档ID列表")
+        doc_ids: List[str] = Body(..., embed=True, description="文档ID列表")
 ):
     """批量删除文档"""
     results = []

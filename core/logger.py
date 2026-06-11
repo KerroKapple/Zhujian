@@ -90,6 +90,12 @@ class Logger:
     def _setup_handlers(self):
         """配置日志处理器"""
 
+        # 控制台统一 UTF-8，避免 Windows cp1252 写中文/emoji 时 UnicodeEncodeError
+        try:
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
+
         # ===== 1. 控制台输出（彩色） =====
         loguru_logger.add(
             sys.stdout,

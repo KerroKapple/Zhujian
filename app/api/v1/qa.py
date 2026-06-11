@@ -17,9 +17,9 @@
 ========================================
 """
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, status, Query
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Dict, Optional
 from datetime import datetime
 
@@ -47,8 +47,8 @@ class QuestionRequest(BaseModel):
     stream: bool = Field(False, description="是否流式输出")
     language: Optional[str] = Field("zh", description="回答语言")
 
-    class Config:
-        schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "query": "建筑结构楼面活荷载如何取值？",
                 "top_k": 5,
@@ -57,6 +57,7 @@ class QuestionRequest(BaseModel):
                 "language": "zh"
             }
         }
+    )
 
 
 class Message(BaseModel):
@@ -72,8 +73,8 @@ class ChatRequest(BaseModel):
     top_k: Optional[int] = Field(5, description="检索文档数量")
     use_rerank: bool = Field(True, description="是否使用重排序")
 
-    class Config:
-        schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "query": "那活荷载呢？",
                 "history": [
@@ -84,6 +85,7 @@ class ChatRequest(BaseModel):
                 "use_rerank": True
             }
         }
+    )
 
 
 # =========================================
@@ -138,18 +140,7 @@ async def ask_question(request: QuestionRequest):
     try:
         logger.info(f"收到问题: {request.query}")
 
-        # 这里需要实例化你的生成器
-        # generator = AnswerGenerator(llm_client, retriever)
-
-        # 生成答案（示例）
-        # result = generator.generate(
-        #     query=request.query,
-        #     top_k=request.top_k,
-        #     use_rerank=request.use_rerank,
-        #     stream=False
-        # )
-
-        # 临时示例响应（实际使用时删除）
+        # TODO: 接入 services.rag.RagPipeline / AnswerGenerator（需重型 ML 层），当前返回占位答案
         result = {
             "answer": f"这是对问题'{request.query}'的回答示例。\n\n根据检索到的相关文档，...",
             "query": request.query,
@@ -307,15 +298,15 @@ async def chat(request: ChatRequest):
         )
 
 
-@router.get(
+@router.post(
     "/feedback/{query_id}",
     summary="答案反馈",
     description="用户对答案进行评分反馈"
 )
 async def submit_feedback(
         query_id: str,
-        rating: int = Field(..., description="评分 1-5", ge=1, le=5),
-        comment: Optional[str] = Field(None, description="反馈评论")
+        rating: int = Query(..., description="评分 1-5", ge=1, le=5),
+        comment: Optional[str] = Query(None, description="反馈评论")
 ):
     """
     答案反馈接口
@@ -323,16 +314,16 @@ async def submit_feedback(
     用于收集用户对答案的评价
     """
     try:
-        logger.info(f"收到反馈 | query_id: {query_id} | rating: {rating}")
+        logger.info(f"收到反馈 | query_id: {query_id} | rating: {rating} | comment: {comment}")
 
-        # 这里应该保存反馈到数据库
-        # await save_feedback(query_id, rating, comment)
+        # TODO: 接入反馈持久化 service（当前无 feedback service 层，暂仅记录日志）
 
         return {
             "success": True,
             "message": "感谢您的反馈",
             "query_id": query_id,
-            "rating": rating
+            "rating": rating,
+            "comment": comment
         }
 
     except Exception as e:

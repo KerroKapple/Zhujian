@@ -24,6 +24,7 @@ from datetime import date
 
 from loguru import logger
 from core.database import get_db
+from models.project import ProjectBasic
 from services.project_service import (
     ProjectService,
     TaskService,
@@ -85,8 +86,13 @@ async def get_projects(
     """获取项目列表"""
     try:
         projects = ProjectService.get_projects(db, skip=skip, limit=limit, status=status)
-        total = len(projects)  # 简化版，实际应该用 count()
-        
+
+        # 真实总数：与列表查询使用相同的过滤条件
+        count_query = db.query(ProjectBasic)
+        if status:
+            count_query = count_query.filter(ProjectBasic.status == status)
+        total = count_query.count()
+
         return PaginationResponse(
             code=200,
             message="获取成功",

@@ -18,7 +18,9 @@
 ========================================
 """
 
-from fastapi import APIRouter, HTTPException, status, Depends
+import os
+
+from fastapi import APIRouter, HTTPException, status, Depends, Header
 from pydantic import BaseModel, Field
 from typing import Dict, Optional
 from datetime import datetime
@@ -28,6 +30,34 @@ from loguru import logger
 from core.config import settings
 
 router = APIRouter()
+
+
+# =========================================
+# 破坏性端点的可选 API Key 鉴权
+# =========================================
+
+async def require_admin_key(x_api_key: Optional[str] = Header(None, alias="X-API-Key")):
+    """
+    破坏性操作（清缓存/重建索引）的可选鉴权开关。
+
+    - 仅当 settings.ENABLE_PERMISSION_CHECK 为 True 时启用；
+    - 期望密钥来自环境变量 ADMIN_API_KEY；
+    - 若开关开启但未配置 ADMIN_API_KEY，则放行并告警（避免阻断前端联调），
+      但记录风险提示。
+    """
+    if not settings.ENABLE_PERMISSION_CHECK:
+        return
+
+    expected = os.environ.get("ADMIN_API_KEY")
+    if not expected:
+        logger.warning("ENABLE_PERMISSION_CHECK 已开启但未配置 ADMIN_API_KEY，破坏性端点暂未鉴权")
+        return
+
+    if x_api_key != expected:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="缺少或无效的 API Key"
+        )
 
 
 # =========================================
@@ -82,10 +112,10 @@ async def get_system_status():
     - 运行时间
     """
     try:
-        # 获取系统信息
+        # 获取系统信息（Windows 用当前工作目录锚定盘符）
         cpu_percent = psutil.cpu_percent(interval=1)
         memory = psutil.virtual_memory()
-        disk = psutil.disk_usage('/')
+        disk = psutil.disk_usage(os.getcwd())
 
         # 计算运行时间
         import time
@@ -176,7 +206,7 @@ async def health_check():
     summary="重建索引",
     description="重新构建所有索引"
 )
-async def rebuild_index():
+async def rebuild_index(_: None = Depends(require_admin_key)):
     """
     重建索引接口
 
@@ -189,8 +219,7 @@ async def rebuild_index():
     try:
         logger.info("开始重建索引")
 
-        # 这里应该触发索引重建任务
-        # await rebuild_all_indexes()
+        # TODO: 接入索引重建任务（无对应 service，当前为占位响应）
 
         return {
             "success": True,
@@ -249,7 +278,8 @@ async def get_index_stats():
     description="清理Redis缓存"
 )
 async def clear_cache(
-        pattern: Optional[str] = None
+        pattern: Optional[str] = None,
+        _: None = Depends(require_admin_key)
 ):
     """
     清理缓存接口
@@ -260,11 +290,7 @@ async def clear_cache(
     try:
         logger.info(f"清理缓存 | 模式: {pattern}")
 
-        # 这里应该清理Redis缓存
-        # if pattern:
-        #     count = await redis_client.delete_pattern(pattern)
-        # else:
-        #     count = await redis_client.flushdb()
+        # TODO: 接入 redis_client 清理逻辑（当前为占位）
 
         count = 0  # 临时
 
@@ -426,7 +452,7 @@ async def get_config():
     try:
         config = {
             "app_name": settings.APP_NAME,
-            "environment": settings.APP_ENV,
+            "environment": settings.ENVIRONMENT,
             "debug": settings.DEBUG,
             "llm_model": settings.LLM_MODEL if hasattr(settings, 'LLM_MODEL') else "N/A",
             "embedding_model": settings.EMBEDDING_MODEL if hasattr(settings, 'EMBEDDING_MODEL') else "N/A"

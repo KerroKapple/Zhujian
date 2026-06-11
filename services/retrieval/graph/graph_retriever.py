@@ -318,19 +318,22 @@ class GraphRetriever:
                 continue
 
             try:
+                # value 用参数 $value 传入防注入；正则模式在 Cypher 内拼接，避免转义负担
+                # label 来自 _get_label_for_type 白名单，安全
+                doc_id_clause = " AND n.doc_id = $doc_id" if document_id else ""
+
                 if field == "code":
                     query = f"""
                         MATCH (n:{label})
-                        WHERE n.code =~ '(?i).*{value}.*' OR n.id =~ '(?i).*{value}.*'
-                        {"WHERE n.doc_id = $doc_id" if document_id else ""}
+                        WHERE (n.code =~ ('(?i).*' + $value + '.*')
+                               OR n.id =~ ('(?i).*' + $value + '.*')){doc_id_clause}
                         RETURN n
                         LIMIT $limit
                     """
                 elif field == "grade":
                     query = f"""
                         MATCH (n:{label})
-                        WHERE n.grade =~ '(?i).*{value}.*'
-                        {"AND n.doc_id = $doc_id" if document_id else ""}
+                        WHERE n.grade =~ ('(?i).*' + $value + '.*'){doc_id_clause}
                         RETURN n
                         LIMIT $limit
                     """
@@ -338,13 +341,12 @@ class GraphRetriever:
                     # 通用搜索
                     query = f"""
                         MATCH (n:{label})
-                        WHERE any(key in keys(n) WHERE toString(n[key]) =~ '(?i).*{value}.*')
-                        {"AND n.doc_id = $doc_id" if document_id else ""}
+                        WHERE any(key in keys(n) WHERE toString(n[key]) =~ ('(?i).*' + $value + '.*')){doc_id_clause}
                         RETURN n
                         LIMIT $limit
                     """
 
-                params = {"limit": limit}
+                params = {"limit": limit, "value": value}
                 if document_id:
                     params["doc_id"] = document_id
 

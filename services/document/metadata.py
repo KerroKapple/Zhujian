@@ -19,7 +19,7 @@
 
 import re
 import hashlib
-from datetime import datetime
+from datetime import datetime, date
 from typing import Dict, List, Optional, Tuple
 from pathlib import Path
 
@@ -147,7 +147,7 @@ class MetadataExtractor:
         dates = self._extract_dates(text)
         if dates:
             info['extracted_dates'] = dates
-            info['latest_date'] = max(dates)
+            info['latest_date'] = self._latest_date(dates)
 
         # 4. 编号提取（如文件编号、合同编号）
         doc_number = self._extract_document_number(text)
@@ -358,6 +358,26 @@ class MetadataExtractor:
         dates = sorted(set(dates))
 
         return dates
+
+    @staticmethod
+    def _parse_date(date_str: str) -> Optional[date]:
+        """将多格式日期字符串解析为 date 对象"""
+        # 统一中文与斜杠格式为 年-月-日 三段数字
+        nums = re.findall(r"\d+", date_str)
+        if len(nums) < 3:
+            return None
+        try:
+            return date(int(nums[0]), int(nums[1]), int(nums[2]))
+        except (ValueError, TypeError):
+            return None
+
+    def _latest_date(self, dates: List[str]) -> str:
+        """按真实日期取最新（解析失败的回退为字典序）"""
+        parsed = [(self._parse_date(d), d) for d in dates]
+        valid = [(p, d) for p, d in parsed if p is not None]
+        if valid:
+            return max(valid, key=lambda x: x[0])[1]
+        return max(dates)
 
     def _extract_document_number(self, text: str) -> Optional[str]:
         """
