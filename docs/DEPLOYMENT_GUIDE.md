@@ -49,8 +49,8 @@
 
 ```bash
 # 1. 克隆项目
-git clone <repository-url>
-cd Enterprise_RAG
+git clone https://github.com/KerroKapple/Zhujian.git
+cd Zhujian
 
 # 2. 启动依赖服务
 cd docker
