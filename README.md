@@ -1,6 +1,6 @@
-# RAG 智能工程知识问答系统
+# 筑见 BuildView · 建筑工程智能平台
 
-> **Enterprise RAG System** - 基于 Milvus + PostgreSQL + Redis + Neo4j + 大模型的私有化 RAG 问答系统
+> **筑见 BuildView** - 基于 Milvus + PostgreSQL + Redis + Neo4j + 大模型的建筑工程「知识库 + 项目智能」双核平台
 > 支持 **智能问答** + **Agent 智能分析** + **知识图谱** + **施工图处理**
 
 ---
@@ -482,7 +482,7 @@ LLM 生成答案
 
 ```env
 # 应用配置
-APP_NAME=Enterprise RAG System
+APP_NAME=筑见 BuildView
 DEBUG=false
 ENVIRONMENT=production
 

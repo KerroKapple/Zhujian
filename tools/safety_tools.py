@@ -30,7 +30,7 @@ from collections import Counter
 from sqlalchemy.orm import Session
 
 from models.project import SafetyRecord
-from services.project_service import SafetyService
+from services.project.project_service import SafetyService
 
 
 class SafetyTools:
@@ -39,6 +39,7 @@ class SafetyTools:
     def __init__(self, db: Session):
         """初始化工具实例"""
         self.db = db
+        self.safety_service = SafetyService(db)
 
     def get_safety_overview(self, project_id: str, days: int = 30) -> Dict[str, Any]:
         """
@@ -71,8 +72,8 @@ class SafetyTools:
         start_date = end_date - timedelta(days=days)
 
         # 获取指定时间段内的安全记录
-        records = SafetyService.get_safety_records_by_project(
-            self.db, project_id,
+        records = self.safety_service.get_safety_records_by_project(
+            project_id,
             start_date=start_date,
             end_date=end_date
         )
@@ -156,8 +157,8 @@ class SafetyTools:
         start_date = end_date - timedelta(days=days)
 
         # 获取时间段内的安全记录
-        records = SafetyService.get_safety_records_by_project(
-            self.db, project_id,
+        records = self.safety_service.get_safety_records_by_project(
+            project_id,
             start_date=start_date,
             end_date=end_date
         )
@@ -221,7 +222,7 @@ class SafetyTools:
 
         按多个维度分析缺陷分布情况
         """
-        records = SafetyService.get_safety_records_by_project(self.db, project_id)
+        records = self.safety_service.get_safety_records_by_project(project_id)
 
         if not records:
             return {"message": "没有安全检查记录", "has_data": False}
@@ -262,7 +263,7 @@ class SafetyTools:
             - 重要: 高级别问题 或 存在>14天
             - 一般: 其他情况
         """
-        records = SafetyService.get_open_defects(self.db, project_id)
+        records = self.safety_service.get_open_defects(project_id)
 
         open_defects = []
         today = date.today()
@@ -303,8 +304,8 @@ class SafetyTools:
         end_date = date.today()
         start_date = end_date - timedelta(days=months * 30)
 
-        records = SafetyService.get_safety_records_by_project(
-            self.db, project_id,
+        records = self.safety_service.get_safety_records_by_project(
+            project_id,
             start_date=start_date,
             end_date=end_date
         )

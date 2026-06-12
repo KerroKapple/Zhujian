@@ -29,7 +29,7 @@ from datetime import date, timedelta
 from sqlalchemy.orm import Session
 
 from models.project import ProjectBasic, TaskSchedule
-from services.project_service import ProjectService, TaskService
+from services.project.project_service import ProjectService, TaskService
 
 
 class ProgressTools:
@@ -48,6 +48,8 @@ class ProgressTools:
             db: 数据库会话对象
         """
         self.db = db
+        self.project_service = ProjectService(db)
+        self.task_service = TaskService(db)
 
     def get_project_overview(self, project_id: str) -> Dict[str, Any]:
         """
@@ -84,12 +86,12 @@ class ProgressTools:
             45.3
         """
         # 获取项目基本信息
-        project = ProjectService.get_project(self.db, project_id)
+        project = self.project_service.get_project(project_id)
         if not project:
             return {"error": f"Project {project_id} not found"}
 
         # 获取所有任务
-        tasks = TaskService.get_tasks_by_project(self.db, project_id)
+        tasks = self.task_service.get_tasks_by_project(project_id)
 
         # 统计各状态任务数量
         total_tasks = len(tasks)
@@ -151,7 +153,7 @@ class ProgressTools:
             - Red: SPI < 0.85 (严重延期)
         """
         # 获取项目所有任务
-        tasks = TaskService.get_tasks_by_project(self.db, project_id)
+        tasks = self.task_service.get_tasks_by_project(project_id)
 
         if not tasks:
             return {
@@ -241,7 +243,7 @@ class ProgressTools:
             3. 偏差大小（大 > 小）
         """
         # 获取所有任务
-        tasks = TaskService.get_tasks_by_project(self.db, project_id)
+        tasks = self.task_service.get_tasks_by_project(project_id)
 
         delayed_tasks = []
 
@@ -323,7 +325,7 @@ class ProgressTools:
             因此这些任务需要重点关注和资源倾斜
         """
         # 获取所有标记为关键路径的任务
-        critical_tasks = TaskService.get_critical_tasks(self.db, project_id)
+        critical_tasks = self.task_service.get_critical_tasks(project_id)
 
         result = []
         for task in critical_tasks:
@@ -370,7 +372,7 @@ class ProgressTools:
             - 平稳: 高风险任务数 <= 3
         """
         # 获取所有任务
-        tasks = TaskService.get_tasks_by_project(self.db, project_id)
+        tasks = self.task_service.get_tasks_by_project(project_id)
 
         # 计算截止日期（当前日期 - N天）
         cutoff_date = date.today() - timedelta(days=days)
@@ -439,12 +441,12 @@ class ProgressTools:
             - 低: 有效SPI样本 < 5
         """
         # 获取项目基本信息
-        project = ProjectService.get_project(self.db, project_id)
+        project = self.project_service.get_project(project_id)
         if not project:
             return {"error": "Project not found"}
 
         # 获取所有任务
-        tasks = TaskService.get_tasks_by_project(self.db, project_id)
+        tasks = self.task_service.get_tasks_by_project(project_id)
 
         # 计算平均SPI
         # 只考虑有效的SPI值（SPI > 0）
@@ -539,7 +541,7 @@ class ProgressTools:
         """
         # 获取所有关键路径任务
         # 只有关键路径上的任务才可能成为瓶颈
-        critical_tasks = TaskService.get_critical_tasks(self.db, project_id)
+        critical_tasks = self.task_service.get_critical_tasks(project_id)
 
         bottlenecks = []
 
@@ -605,7 +607,7 @@ class ProgressTools:
             实际项目中应结合团队规模、任务复杂度等因素综合评估
         """
         # 获取所有任务
-        tasks = TaskService.get_tasks_by_project(self.db, project_id)
+        tasks = self.task_service.get_tasks_by_project(project_id)
 
         # 筛选进行中的任务
         # 进行中的任务代表当前需要资源的任务

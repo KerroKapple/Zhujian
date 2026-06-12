@@ -116,8 +116,8 @@ __all__ = [
 # 6. 版本信息
 # =========================================
 __version__ = settings.APP_VERSION
-__author__ = "Enterprise RAG Team"
-__description__ = "企业级智能知识问答系统 - 核心模块"
+__author__ = "筑见 BuildView Team"
+__description__ = "筑见 BuildView · 建筑工程「知识库 + 项目智能」双核平台 - 核心模块"
 
 
 # =========================================

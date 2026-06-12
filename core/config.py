@@ -39,7 +39,7 @@ class Settings(BaseSettings):
     # =========================================
     # 应用基础配置
     # =========================================
-    APP_NAME: str = "Enterprise RAG System"
+    APP_NAME: str = "筑见 BuildView"
     APP_VERSION: str = "1.0.0"
     API_PREFIX: str = "/api/v1"  # API路由前缀
 

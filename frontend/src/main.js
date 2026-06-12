@@ -7,7 +7,9 @@ import * as ElementPlusIconsVue from '@element-plus/icons-vue'
 
 import App from './App.vue'
 import router from './router'
+import './styles/tokens.css'
 import './styles/index.css'
+import './charts/theme' // 注册 ECharts zhujian 主题
 
 const app = createApp(App)
 

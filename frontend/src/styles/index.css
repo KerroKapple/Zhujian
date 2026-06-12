@@ -1,3 +1,34 @@
+/* 全局基样式（基于 token）+ Element Plus 变量覆盖 */
+
+/* Element Plus 主题映射到工程蓝 token */
+:root {
+  --el-color-primary: var(--c-primary);
+  --el-color-primary-light-3: #5191f2;
+  --el-color-primary-light-5: #84b1f6;
+  --el-color-primary-light-7: #b7d0fa;
+  --el-color-primary-light-8: #cfe0fc;
+  --el-color-primary-light-9: #e8f0fe;
+  --el-color-primary-dark-2: var(--c-primary-active);
+
+  --el-color-success: var(--c-success);
+  --el-color-warning: var(--c-warning);
+  --el-color-danger: var(--c-danger);
+  --el-color-error: var(--c-danger);
+  --el-color-info: var(--c-text-2);
+
+  --el-border-radius-base: var(--r-sm);
+  --el-border-radius-small: var(--r-sm);
+  --el-text-color-primary: var(--c-text);
+  --el-text-color-regular: var(--c-text-2);
+  --el-border-color: var(--c-border);
+  --el-border-color-light: var(--c-border);
+  --el-bg-color: var(--c-surface);
+  --el-fill-color-blank: var(--c-surface);
+  --el-box-shadow-light: var(--shadow-card);
+
+  --el-font-family: 'Segoe UI', -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -7,30 +38,61 @@ body,
 #app {
   height: 100%;
   margin: 0;
-  font-family: -apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
-  color: #1f2329;
+  font-family: var(--el-font-family);
+  color: var(--c-text);
+  background: var(--c-bg);
+  -webkit-font-smoothing: antialiased;
 }
 
+a {
+  color: var(--c-primary);
+  text-decoration: none;
+}
+
+/* 兼容旧 views 的通用类（下一波重做前保持可用） */
 .page-container {
-  padding: 16px;
+  padding: var(--sp-4);
 }
-
 .page-header {
-  margin-bottom: 16px;
+  margin-bottom: var(--sp-4);
 }
-
 .page-header h2 {
   margin: 0 0 4px;
   font-size: 20px;
+  color: var(--c-text);
 }
-
 .page-header p {
   margin: 0;
-  color: #8a8f99;
+  color: var(--c-text-2);
   font-size: 13px;
 }
-
 .metric-value {
   font-size: 26px;
   font-weight: 600;
+}
+
+/* 路由切换过渡 */
+.fade-slide-enter-active,
+.fade-slide-leave-active {
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+.fade-slide-enter-from {
+  opacity: 0;
+  transform: translateY(6px);
+}
+.fade-slide-leave-to {
+  opacity: 0;
+}
+
+/* 滚动条 */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: #c7cfdb;
+  border-radius: 8px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #aab4c4;
 }

@@ -19,6 +19,9 @@ logs/
 node_modules/
 frontend/dist/
 
+# Brainstorm 可视化伴侣
+.superpowers/
+
 # OS
 .DS_Store
 Thumbs.db

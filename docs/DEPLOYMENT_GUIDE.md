@@ -1,4 +1,4 @@
-# 企业级 RAG 系统 - 部署指南
+# 筑见 BuildView - 部署指南
 
 ## 目录
 
@@ -215,7 +215,7 @@ uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
 
 | 配置项 | 默认值 | 说明 |
 |--------|--------|------|
-| `APP_NAME` | Enterprise RAG System | 应用名称 |
+| `APP_NAME` | 筑见 BuildView | 应用名称 |
 | `DEBUG` | false | 调试模式 |
 | `ENVIRONMENT` | production | 运行环境 |
 | `HOST` | 0.0.0.0 | 绑定地址 |
@@ -279,7 +279,7 @@ uv run gunicorn app.main:app \
 
 ```ini
 [Unit]
-Description=Enterprise RAG API Service
+Description=筑见 BuildView API Service
 After=network.target
 
 [Service]
