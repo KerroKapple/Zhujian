@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --frozen --python 3.11
+
+      # 仅运行不依赖外部服务（Milvus/MySQL/Redis/LLM）的单元测试。
+      # 现有 tests/ 全部使用 mock/monkeypatch，可在 CI 中离线运行。
+      - name: Run unit tests
+        run: uv run --frozen --python 3.11 pytest
