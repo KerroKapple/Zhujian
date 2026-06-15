@@ -31,13 +31,10 @@ from core.config import settings, get_settings
 from core.logger import (
     logger,                    # loguru logger实例
     setup_logger,              # 日志系统初始化函数
-    log_query,                 # 记录查询日志
-    log_metrics,               # 记录性能指标
-    log_document_processing,   # 记录文档处理日志
-    log_retrieval,             # 记录检索日志
-    log_error,                 # 记录错误日志
-    LoggerContext,             # 日志上下文管理器
-    log_execution              # 日志装饰器
+    log_execution,             # 日志装饰器
+    log_api_call,              # API 调用日志装饰器
+    StructuredLogger,          # 结构化日志器
+    monitor_performance        # 性能监控装饰器
 )
 
 # =========================================
@@ -51,7 +48,6 @@ from core.constants import (
     UserRole,                  # 用户角色
     RetrievalMode,             # 检索模式
     MilvusCollection,          # Milvus集合名称
-    MetadataField,             # 元数据字段
     QueryType,                 # 查询类型
     AnswerQuality,             # 答案质量
     PromptType,                # Prompt类型
@@ -67,9 +63,6 @@ from core.constants import (
     SystemConfig,              # 系统配置常量
     MilvusIndexParams,         # Milvus索引参数
     SearchParams,              # 搜索参数
-
-    # 其他配置
-    RETRIEVAL_PRIORITY,        # 检索优先级映射
 )
 
 # =========================================
@@ -90,13 +83,10 @@ __all__ = [
     # ===== 日志相关 =====
     "logger",                  # 日志记录器
     "setup_logger",            # 日志初始化
-    "log_query",               # 查询日志
-    "log_metrics",             # 性能指标日志
-    "log_document_processing", # 文档处理日志
-    "log_retrieval",           # 检索日志
-    "log_error",               # 错误日志
-    "LoggerContext",           # 上下文管理器
     "log_execution",           # 日志装饰器
+    "log_api_call",            # API 调用日志装饰器
+    "StructuredLogger",        # 结构化日志器
+    "monitor_performance",     # 性能监控装饰器
 
     # ===== 枚举类型 =====
     "DocumentType",            # 文档类型枚举
@@ -110,7 +100,6 @@ __all__ = [
     "PromptType",              # Prompt类型枚举
 
     # ===== 常量类 =====
-    "MetadataField",           # 元数据字段名
     "HTTPStatus",              # HTTP状态码
     "ErrorMessage",            # 错误消息
     "SuccessMessage",          # 成功消息
@@ -121,15 +110,14 @@ __all__ = [
     "SystemConfig",            # 系统配置常量
     "MilvusIndexParams",       # Milvus索引参数
     "SearchParams",            # 搜索参数
-    "RETRIEVAL_PRIORITY",      # 检索优先级
 ]
 
 # =========================================
 # 6. 版本信息
 # =========================================
 __version__ = settings.APP_VERSION
-__author__ = "Enterprise RAG Team"
-__description__ = "企业级智能知识问答系统 - 核心模块"
+__author__ = "筑见 BuildView Team"
+__description__ = "筑见 BuildView · 建筑工程「知识库 + 项目智能」双核平台 - 核心模块"
 
 
 # =========================================

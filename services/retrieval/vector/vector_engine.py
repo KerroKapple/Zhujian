@@ -21,7 +21,6 @@ from typing import List, Dict, Optional, Tuple
 import numpy as np
 
 from pymilvus import (
-    connections,
     Collection,
     CollectionSchema,
     FieldSchema,
@@ -31,6 +30,7 @@ from pymilvus import (
 from loguru import logger
 
 from services.embedding.embedder import Embedder
+from services.retrieval.vector.milvus_client import milvus_client
 
 
 class VectorRetriever:
@@ -72,30 +72,16 @@ class VectorRetriever:
         self.port = port
         self.dim = dim
 
-        # 连接Milvus
-        self._connect()
-
-        # 初始化集合
+        # 集合句柄延迟初始化，不在 __init__ 主动建连
         self.collection = None
+        # 标记集合是否已 load 到内存，避免每次 search 重复 load
+        self._loaded = False
 
         logger.info(
             f"向量检索器初始化 | "
             f"集合: {collection_name} | "
             f"维度: {dim}"
         )
-
-    def _connect(self):
-        """连接Milvus服务器"""
-        try:
-            connections.connect(
-                alias="default",
-                host=self.host,
-                port=self.port
-            )
-            logger.info(f"已连接到Milvus | {self.host}:{self.port}")
-        except Exception as e:
-            logger.error(f"连接Milvus失败: {e}")
-            raise
 
     def create_collection(
             self,
@@ -107,6 +93,8 @@ class VectorRetriever:
         参数：
             drop_if_exists: 如果集合存在是否删除
         """
+        milvus_client.ensure_connected()
+
         # 检查集合是否存在
         if utility.has_collection(self.collection_name):
             if drop_if_exists:
@@ -242,6 +230,8 @@ class VectorRetriever:
         if not self.collection:
             raise RuntimeError("集合未创建")
 
+        milvus_client.ensure_connected()
+
         logger.info(f"开始插入文档 | 数量: {len(documents)}")
 
         total_inserted = 0
@@ -260,13 +250,12 @@ class VectorRetriever:
                 doc_ids.append(doc.get('doc_id', f"doc_{i}"))
                 texts.append(doc.get('text', ''))
 
-                # 如果没有embedding，自动生成
+                # 如果没有embedding，自动生成；兼容 list/ndarray
                 if 'embedding' in doc:
-                    embeddings.append(doc['embedding'].tolist())
+                    embeddings.append(np.asarray(doc['embedding']).tolist())
                 else:
-                    # 使用embedder生成向量
                     emb = self.embedder.embed_query(doc.get('text', ''))
-                    embeddings.append(emb.tolist())
+                    embeddings.append(np.asarray(emb).tolist())
 
                 metadatas.append(doc.get('metadata', {}))
 
@@ -314,10 +303,14 @@ class VectorRetriever:
         if not self.collection:
             raise RuntimeError("集合未创建")
 
+        milvus_client.ensure_connected()
+
         logger.debug(f"向量检索 | 查询: {query[:50]}... | top_k: {top_k}")
 
-        # 加载集合到内存
-        self.collection.load()
+        # 仅首次加载集合到内存
+        if not self._loaded:
+            self.collection.load()
+            self._loaded = True
 
         # 查询向量化
         query_embedding = self.embedder.embed_query(query)
@@ -366,6 +359,8 @@ class VectorRetriever:
         if not self.collection:
             raise RuntimeError("集合未创建")
 
+        milvus_client.ensure_connected()
+
         delete_result = self.collection.delete(expr)
 
         logger.info(f"删除文档: {delete_result.delete_count} 条")
@@ -387,6 +382,8 @@ class VectorRetriever:
 
     def drop_collection(self):
         """删除集合"""
+        milvus_client.ensure_connected()
+
         if utility.has_collection(self.collection_name):
             utility.drop_collection(self.collection_name)
             logger.info(f"集合已删除: {self.collection_name}")

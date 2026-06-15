@@ -196,8 +196,9 @@ class DocumentSplitter:
                     metadata={'type': 'paragraph'}
                 )
                 chunks.append(chunk)
-                current_chunk = ""
+                # 清空前用旧块长度推进起点
                 current_start = current_start + len(current_chunk)
+                current_chunk = ""
 
             # 添加段落
             if current_chunk:
@@ -214,8 +215,9 @@ class DocumentSplitter:
                     metadata={'type': 'paragraph'}
                 )
                 chunks.append(chunk)
-                current_chunk = ""
+                # 清空前用旧块长度推进起点
                 current_start = current_start + len(current_chunk)
+                current_chunk = ""
 
         # 最后一个块
         if current_chunk:
@@ -324,14 +326,18 @@ class DocumentSplitter:
                     metadata={'type': 'recursive'}
                 ))
 
+                # 已消费长度（用于推进起点）
+                consumed = len(current_chunk)
+
                 # 开始新块（考虑重叠）
                 if self.chunk_overlap > 0:
                     overlap_text = current_chunk[-self.chunk_overlap:]
+                    # 新块起点 = 旧块起点 + 已消费长度 - 重叠回退
+                    current_start = current_start + consumed - len(overlap_text)
                     current_chunk = overlap_text + split
-                    current_start = current_start + len(current_chunk) - self.chunk_overlap - len(split)
                 else:
+                    current_start = current_start + consumed
                     current_chunk = split
-                    current_start = current_start + len(current_chunk)
             else:
                 current_chunk += split
 

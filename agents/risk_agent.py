@@ -564,16 +564,17 @@ class RiskAnalysisAgent:
             for overrun in overruns[:3]:  # 取前3个最严重的
                 item_variance = overrun.get("variance_rate", 0)
                 if item_variance > 20:
+                    item_name = overrun.get("item", "未知项目")
                     risks.append(self._create_risk(
                         category="cost",
                         level="high" if item_variance > 30 else "medium",
-                        title=f"{overrun.get('cost_item', '未知项目')}超支",
+                        title=f"{item_name}超支",
                         description=f"该项目超支{item_variance:.1f}%",
                         impact="影响整体成本控制",
                         probability=0.6,
                         impact_score=0.5,
-                        indicators={"item": overrun.get('cost_item'), "variance_rate": item_variance},
-                        recommendations=[f"审查{overrun.get('cost_item')}相关支出"]
+                        indicators={"item": item_name, "variance_rate": item_variance},
+                        recommendations=[f"审查{item_name}相关支出"]
                     ))
 
         except Exception as e:
@@ -813,7 +814,6 @@ class RiskAnalysisAgent:
             progress_trend = self.progress_tools.analyze_progress_trend(project_id, days=days)
             trends.append(RiskTrend(
                 category="progress",
-                current_level=progress_trend.get("risk_level", "unknown"),
                 trend=self._map_trend(progress_trend.get("trend", "平稳")),
                 key_changes=[f"高风险任务数: {progress_trend.get('high_risk_tasks', 0)}"]
             ))
@@ -826,12 +826,12 @@ class RiskAnalysisAgent:
                 key_changes=[f"成本增长率: {cost_trend.get('growth_rate', 0):.1f}%"]
             ))
 
-            # 安全趋势
+            # 安全趋势（analyze_safety_trend 返回 trend / trend_description）
             safety_trend = self.safety_tools.analyze_safety_trend(project_id, months=1)
             trends.append(RiskTrend(
                 category="safety",
-                trend=self._map_trend(safety_trend.get("overall_trend", "平稳")),
-                key_changes=[f"缺陷趋势: {safety_trend.get('defect_trend', '平稳')}"]
+                trend=self._map_trend(safety_trend.get("trend", "平稳")),
+                key_changes=[f"缺陷趋势: {safety_trend.get('trend_description', '平稳')}"]
             ))
 
         except Exception as e:
@@ -846,6 +846,7 @@ class RiskAnalysisAgent:
             "恶化": "deteriorating",
             "下降": "improving",
             "好转": "improving",
+            "改善": "improving",
             "平稳": "stable"
         }
         return mapping.get(trend_str, "stable")

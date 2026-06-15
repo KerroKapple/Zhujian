@@ -1,0 +1,38 @@
+[project]
+name = "enterprise-rag"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "chardet>=7.4.3",
+    "fastapi>=0.136.3",
+    "httpx>=0.28.1",
+    "jieba>=0.42.1",
+    "langdetect>=1.0.9",
+    "loguru>=0.7.3",
+    "neo4j>=6.2.0",
+    "numpy>=2.4.6",
+    "openai>=2.41.0",
+    "openpyxl>=3.1.5",
+    "pandas>=3.0.3",
+    "passlib[bcrypt]>=1.7.4",
+    "pdfplumber>=0.11.9",
+    "pillow>=12.2.0",
+    "psutil>=7.2.2",
+    "psycopg2-binary>=2.9.12",
+    "pydantic>=2.13.4",
+    "pydantic-settings>=2.14.1",
+    "pymilvus>=3.0.0",
+    "pypdf2>=3.0.1",
+    "pytest>=9.0.3",
+    "pytest-asyncio>=1.4.0",
+    "python-dateutil>=2.9.0.post0",
+    "python-docx>=1.2.0",
+    "python-dotenv>=1.2.2",
+    "python-jose[cryptography]>=3.5.0",
+    "python-multipart>=0.0.32",
+    "rank-bm25>=0.2.2",
+    "redis>=8.0.0",
+    "requests>=2.34.2",
+    "sqlalchemy>=2.0.50",
+    "uvicorn[standard]>=0.49.0",
+]

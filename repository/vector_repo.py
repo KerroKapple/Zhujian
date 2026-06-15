@@ -17,7 +17,7 @@ Milvus向量数据库访问层 (Repository)
 """
 from typing import List, Dict, Any, Optional, Tuple
 from pymilvus import (
-    connections, Collection, FieldSchema,
+    Collection, FieldSchema,
     CollectionSchema, DataType, utility
 )
 import numpy as np
@@ -25,6 +25,7 @@ import numpy as np
 from core.config import settings
 from core.constants import MilvusCollection, MilvusIndexParams, SearchParams
 from core.logger import logger, log_execution
+from services.retrieval.vector.milvus_client import milvus_client
 
 
 class VectorRepository:
@@ -38,50 +39,9 @@ class VectorRepository:
     """
 
     def __init__(self):
-        """
-        初始化Milvus连接
-        """
-        self._connect_milvus()
+        """初始化（不主动建连，连接由各操作方法懒触发）"""
         self.collections = {}  # 缓存Collection对象
-
-    # =========================================
-    # 连接管理
-    # =========================================
-
-    def _connect_milvus(self):
-        """
-        连接到Milvus服务器
-
-        📌 连接信息从配置文件读取
-        """
-        try:
-            # 检查是否已连接
-            if connections.has_connection("default"):
-                logger.info("Milvus已连接")
-                return
-
-            # 建立连接
-            connections.connect(
-                alias="default",
-                host=settings.MILVUS_HOST,
-                port=settings.MILVUS_PORT,
-                user=settings.MILVUS_USER if settings.MILVUS_USER else None,
-                password=settings.MILVUS_PASSWORD if settings.MILVUS_PASSWORD else None
-            )
-
-            logger.info(f"成功连接到Milvus: {settings.MILVUS_HOST}:{settings.MILVUS_PORT}")
-
-        except Exception as e:
-            logger.error(f"连接Milvus失败: {str(e)}")
-            raise
-
-    def disconnect(self):
-        """断开Milvus连接"""
-        try:
-            connections.disconnect("default")
-            logger.info("断开Milvus连接")
-        except Exception as e:
-            logger.error(f"断开Milvus连接失败: {str(e)}")
+        self._loaded_collections = set()  # 已 load 到内存的集合名
 
     # =========================================
     # 集合（Collection）管理
@@ -102,17 +62,9 @@ class VectorRepository:
 
         返回：
             Collection: 创建的集合对象
-
-        🏗️ 集合结构：
-        - id: 主键（自增）
-        - vector_id: 向量ID（对应PostgreSQL中的chunk_id）
-        - embedding: 向量（768维）
-        - doc_id: 文档ID
-        - doc_type: 文档类型
-        - permission_level: 权限级别
-        - metadata: 元数据（JSON）
         """
         try:
+            milvus_client.ensure_connected()
             # 检查集合是否已存在
             if utility.has_collection(collection_name):
                 logger.warning(f"集合已存在: {collection_name}")
@@ -211,6 +163,8 @@ class VectorRepository:
             if collection_name in self.collections:
                 return self.collections[collection_name]
 
+            milvus_client.ensure_connected()
+
             # 检查集合是否存在
             if not utility.has_collection(collection_name):
                 logger.warning(f"集合不存在: {collection_name}")
@@ -225,6 +179,12 @@ class VectorRepository:
         except Exception as e:
             logger.error(f"获取集合失败: {str(e)}")
             raise
+
+    def _ensure_loaded(self, collection_name: str, collection: Collection):
+        """确保集合已 load 到内存，仅首次触发，避免重复 load"""
+        if collection_name not in self._loaded_collections:
+            collection.load()
+            self._loaded_collections.add(collection_name)
 
     @log_execution("创建索引")
     def create_index(
@@ -272,12 +232,14 @@ class VectorRepository:
             collection_name: 集合名称
         """
         try:
+            milvus_client.ensure_connected()
             if utility.has_collection(collection_name):
                 utility.drop_collection(collection_name)
 
                 # 从缓存中移除
                 if collection_name in self.collections:
                     del self.collections[collection_name]
+                self._loaded_collections.discard(collection_name)
 
                 logger.info(f"删除集合成功: {collection_name}")
             else:
@@ -395,8 +357,8 @@ class VectorRepository:
             if not collection:
                 raise ValueError(f"集合不存在: {collection_name}")
 
-            # 加载集合到内存
-            collection.load()
+            # 加载集合到内存（仅首次，缓存已加载状态避免重复 load）
+            self._ensure_loaded(collection_name, collection)
 
             # 使用默认搜索参数
             if search_params is None:
@@ -501,6 +463,7 @@ class VectorRepository:
             List[Dict]: 检索结果（已去重和排序）
         """
         try:
+            milvus_client.ensure_connected()
             all_results = []
 
             # 定义搜索顺序（按优先级）
@@ -650,8 +613,4 @@ results = repo.hierarchical_search(
 stats = repo.get_collection_stats("rag_standards")
 print(f"集合: {stats['name']}")
 print(f"向量数量: {stats['num_entities']}")
-
-
-# 8. 关闭连接
-repo.disconnect()
 """

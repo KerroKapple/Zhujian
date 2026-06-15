@@ -1,6 +1,6 @@
-# RAG 智能工程知识问答系统
+# 筑见 BuildView · 建筑工程智能平台
 
-> **Enterprise RAG System** - 基于 Milvus + PostgreSQL + Redis + Neo4j + 大模型的私有化 RAG 问答系统
+> **筑见 BuildView** - 基于 Milvus + PostgreSQL + Redis + Neo4j + 大模型的建筑工程「知识库 + 项目智能」双核平台
 > 支持 **智能问答** + **Agent 智能分析** + **知识图谱** + **施工图处理**
 
 ---
@@ -229,7 +229,7 @@ enterprise_rag/
 │   └── DEPLOYMENT_GUIDE.md        # 部署指南
 │
 ├── .env                           # 环境变量配置
-├── requirements.txt               # Python 依赖
+├── pyproject.toml                 # 项目与依赖定义（uv）
 └── README.md                      # 项目说明
 ```
 
@@ -255,17 +255,14 @@ docker-compose up -d
 ### 2. 配置 Python 环境
 
 ```bash
-# 创建虚拟环境
-python -m venv venv
+# 安装依赖（依赖见 pyproject.toml，uv 自动管理虚拟环境）
+uv sync
+```
 
-# 激活（Windows）
-venv\Scripts\activate
+重型 ML 层（OCR/向量化）按需安装：
 
-# 激活（Linux/Mac）
-source venv/bin/activate
-
-# 安装依赖
-pip install -r requirements.txt
+```bash
+uv add torch sentence-transformers paddlepaddle
 ```
 
 ### 3. 配置环境变量
@@ -485,7 +482,7 @@ LLM 生成答案
 
 ```env
 # 应用配置
-APP_NAME=Enterprise RAG System
+APP_NAME=筑见 BuildView
 DEBUG=false
 ENVIRONMENT=production
 

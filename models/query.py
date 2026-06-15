@@ -18,9 +18,8 @@ from sqlalchemy import (
     Column, String, Integer, DateTime, Text,
     Float, JSON, ForeignKey, Boolean, Enum as SQLEnum
 )
-from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
-from datetime import datetime
+from datetime import datetime, timezone
 import uuid
 
 from core.constants import QueryType, AnswerQuality, RetrievalMode
@@ -237,8 +236,8 @@ class QueryLog(Base):
 
     # ===== 时间信息 =====
     created_at = Column(
-        DateTime,
-        default=datetime.utcnow,
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
         nullable=False,
         index=True,
         comment="查询时间"
@@ -387,17 +386,17 @@ class QueryFeedback(Base):
 
     # ===== 时间信息 =====
     created_at = Column(
-        DateTime,
-        default=datetime.utcnow,
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
         nullable=False,
         index=True,
         comment="反馈时间"
     )
 
     updated_at = Column(
-        DateTime,
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow,
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
         nullable=False,
         comment="更新时间"
     )
@@ -465,7 +464,7 @@ session.commit()
 # 查询今天的查询数量
 from sqlalchemy import func
 today_count = session.query(func.count(QueryLog.id)).filter(
-    func.date(QueryLog.created_at) == datetime.utcnow().date()
+    func.date(QueryLog.created_at) == datetime.now(timezone.utc).date()
 ).scalar()
 
 # 查询平均响应时间

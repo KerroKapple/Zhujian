@@ -120,7 +120,7 @@ class DocumentRepository:
             if include_chunks:
                 query = query.options(joinedload(Document.chunks))
             if include_metadata:
-                query = query.options(joinedload(Document.metadata))
+                query = query.options(joinedload(Document.doc_metadata))
 
             document = query.filter(Document.id == doc_id).first()
             return document
@@ -270,8 +270,14 @@ class DocumentRepository:
             if project_id:
                 query = query.filter(Document.project_id == project_id)
 
-            # 排序
-            order_column = getattr(Document, order_by, Document.created_at)
+            # 排序：仅允许白名单真实列，非法值回退默认列
+            allowed_order_columns = {
+                "created_at": Document.created_at,
+                "updated_at": Document.updated_at,
+                "name": Document.name,
+                "file_size": Document.file_size,
+            }
+            order_column = allowed_order_columns.get(order_by, Document.created_at)
             if descending:
                 query = query.order_by(desc(order_column))
             else:
@@ -376,22 +382,28 @@ class DocumentRepository:
             created_chunks = repo.add_chunks("doc_123", chunks)
         """
         try:
-            chunk_objects = []
+            chunk_objects = [
+                DocumentChunk(document_id=doc_id, **chunk_data)
+                for chunk_data in chunks
+            ]
 
-            for chunk_data in chunks:
-                chunk = DocumentChunk(
-                    document_id=doc_id,
-                    **chunk_data
-                )
-                chunk_objects.append(chunk)
+            # add_all 回填主键，单次 commit
+            self.session.add_all(chunk_objects)
+            self.session.flush()
 
-            self.session.bulk_save_objects(chunk_objects)
+            # 总分块数按实际数据库计数，不覆盖已有计数
+            total = self.session.query(func.count(DocumentChunk.id)).filter(
+                DocumentChunk.document_id == doc_id
+            ).scalar() or 0
+            document = self.get_document_by_id(doc_id)
+            if document:
+                document.total_chunks = total
+
             self.session.commit()
+            for chunk in chunk_objects:
+                self.session.refresh(chunk)
 
-            # 更新文档的总分块数
-            self.update_document(doc_id, total_chunks=len(chunks))
-
-            logger.info(f"添加文档分块成功: {doc_id}, 数量: {len(chunks)}")
+            logger.info(f"添加文档分块成功: {doc_id}, 数量: {len(chunk_objects)}")
             return chunk_objects
 
         except Exception as e:

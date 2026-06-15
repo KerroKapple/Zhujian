@@ -189,7 +189,8 @@ class AgentWorkflowLog(Base):
     __tablename__ = "agent_workflow_log"
 
     log_id = Column(Integer, primary_key=True, autoincrement=True)
-    project_id = Column(String(50), index=True)
+    # 审计日志刻意不加外键：允许记录已删除/跨项目/系统级工作流，与项目生命周期解耦
+    project_id = Column(String(50), nullable=True, index=True)
     workflow_type = Column(String(50))  # weekly_report, risk_analysis, cost_analysis等
     start_time = Column(TIMESTAMP)
     end_time = Column(TIMESTAMP)

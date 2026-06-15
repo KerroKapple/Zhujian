@@ -24,7 +24,7 @@ from loguru import logger
 
 from services.llm.llm_client import LLMClient
 from services.llm.prompt.qa_prompt import QAPromptFactory
-from services.retrieval.hybrid_retriever import HybridRetriever
+from services.retrieval.hybrid.hybrid_retriever import HybridRetriever
 
 
 class AnswerGenerator:
@@ -152,17 +152,13 @@ class AnswerGenerator:
 
         # Step 3: LLM生成答案
         if stream:
-            # 流式输出（只返回文本生成器）
-            return self.llm_client.generate(
-                prompt=prompt,
-                stream=True
+            # 流式输出（返回文本生成器）
+            return self.llm_client.chat_stream(
+                [{"role": "user", "content": prompt}]
             )
         else:
             # 非流式输出（返回完整结果）
-            answer = self.llm_client.generate(
-                prompt=prompt,
-                stream=False
-            )
+            answer = self.llm_client.complete(prompt)
 
             # Step 4: 构建响应
             end_time = datetime.now()
@@ -377,7 +373,7 @@ Requirements:
 """
 from services.llm.generator import AnswerGenerator
 from services.llm.llm_client import LLMClient
-from services.retrieval.hybrid_retriever import HybridRetriever
+from services.retrieval.hybrid.hybrid_retriever import HybridRetriever
 
 # 1. 初始化组件
 llm_client = LLMClient(

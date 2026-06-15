@@ -274,12 +274,14 @@ class GraphEnhancedRetriever:
         filters = kwargs.get('filters')
         document_id = kwargs.get('document_id')
 
-        # 并行执行三路检索
+        # 三路检索均为同步阻塞，用 asyncio.to_thread 包裹使其真正并发
         async def _bm25_search():
             if not self.bm25_retriever:
                 return []
             try:
-                return self.bm25_retriever.search(query=query, top_k=bm25_top_k, return_scores=True)
+                return await asyncio.to_thread(
+                    self.bm25_retriever.search, query=query, top_k=bm25_top_k, return_scores=True
+                )
             except Exception as e:
                 logger.warning(f"BM25 检索失败: {e}")
                 return []
@@ -288,7 +290,9 @@ class GraphEnhancedRetriever:
             if not self.vector_retriever:
                 return []
             try:
-                return self.vector_retriever.search(query=query, top_k=vector_top_k, filters=filters)
+                return await asyncio.to_thread(
+                    self.vector_retriever.search, query=query, top_k=vector_top_k, filters=filters
+                )
             except Exception as e:
                 logger.warning(f"向量检索失败: {e}")
                 return []
@@ -297,7 +301,9 @@ class GraphEnhancedRetriever:
             if not self.graph_retriever or not self.graph_retriever.is_available():
                 return []
             try:
-                return self.graph_retriever.search(query=query, top_k=graph_top_k, document_id=document_id)
+                return await asyncio.to_thread(
+                    self.graph_retriever.search, query=query, top_k=graph_top_k, document_id=document_id
+                )
             except Exception as e:
                 logger.warning(f"图谱检索失败: {e}")
                 return []

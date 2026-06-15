@@ -45,6 +45,7 @@ class RedisClient:
 
     _instance = None
     _pool = None
+    _initialized = False
 
     def __new__(cls):
         """单例模式：确保只有一个实例"""
@@ -61,33 +62,31 @@ class RedisClient:
         - 自动管理连接生命周期
         - 支持并发访问
         """
+        if self._initialized:
+            return
+        self._initialized = True
+
         if self._pool is None:
             self._init_pool()
 
     def _init_pool(self):
-        """初始化Redis连接池"""
-        try:
-            # 创建连接池
-            self._pool = ConnectionPool(
-                host=settings.REDIS_HOST,
-                port=settings.REDIS_PORT,
-                password=settings.REDIS_PASSWORD if settings.REDIS_PASSWORD else None,
-                db=settings.REDIS_DB,
-                decode_responses=True,  # 自动解码为字符串
-                max_connections=50,  # 最大连接数
-                socket_timeout=5,  # 连接超时
-                socket_connect_timeout=5  # 连接建立超时
-            )
+        """
+        初始化Redis连接池
 
-            # 测试连接
-            client = redis.Redis(connection_pool=self._pool)
-            client.ping()
-
-            logger.info(f"Redis连接池初始化成功: {settings.REDIS_HOST}:{settings.REDIS_PORT}")
-
-        except Exception as e:
-            logger.error(f"Redis连接池初始化失败: {str(e)}")
-            raise
+        📌 连接池为惰性连接：仅创建池对象，真正的网络连接在首次执行命令时建立，
+           因此模块导入阶段不会因 Redis 未就绪而失败。
+        """
+        self._pool = ConnectionPool(
+            host=settings.REDIS_HOST,
+            port=settings.REDIS_PORT,
+            password=settings.REDIS_PASSWORD if settings.REDIS_PASSWORD else None,
+            db=settings.REDIS_DB,
+            decode_responses=True,  # 自动解码为字符串
+            max_connections=50,  # 最大连接数
+            socket_timeout=5,  # 连接超时
+            socket_connect_timeout=5  # 连接建立超时
+        )
+        logger.info(f"Redis连接池已创建: {settings.REDIS_HOST}:{settings.REDIS_PORT}")
 
     def get_client(self) -> redis.Redis:
         """
@@ -124,10 +123,10 @@ class RedisClient:
             if value is None:
                 return None
 
-            # 尝试反序列化JSON
+            # decode_responses=True 时 value 必为 str，尝试反序列化JSON
             try:
                 return json.loads(value)
-            except (json.JSONDecodeError, TypeError):
+            except json.JSONDecodeError:
                 return value
 
         except Exception as e:
@@ -590,6 +589,15 @@ class RedisClient:
         except Exception as e:
             logger.error(f"Redis连接测试失败: error={str(e)}")
             return False
+
+    def close(self):
+        """关闭Redis连接池"""
+        try:
+            if self._pool is not None:
+                self._pool.disconnect()
+                logger.info("已关闭Redis连接池")
+        except Exception as e:
+            logger.error(f"关闭Redis连接池失败: {str(e)}")
 
 
 # =========================================

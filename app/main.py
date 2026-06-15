@@ -28,10 +28,8 @@ from contextlib import asynccontextmanager
 ROOT_DIR = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT_DIR))
 
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-from fastapi.staticfiles import StaticFiles
 import uvicorn
 
 # 导入配置和核心模块
@@ -77,6 +75,13 @@ async def lifespan(app: FastAPI):
 
     # 日志系统已在导入时自动初始化
 
+    # 校验安全配置（生产环境占位密钥直接 fail-fast）
+    from core.security import check_security_config
+    check_security_config()
+
+    # 创建运行所需目录（data/processed 等）
+    settings.ensure_dirs()
+
     # 检查关键服务连接
     await check_services()
 
@@ -117,7 +122,7 @@ async def check_services():
 
     # 检查 Milvus
     try:
-        from services.retrieval.milvus_client import milvus_client
+        from services.retrieval.vector.milvus_client import milvus_client
         if milvus_client.is_connected():
             logger.info("  ✓ Milvus 连接正常")
     except Exception as e:
@@ -144,7 +149,7 @@ async def cleanup_resources():
 
     try:
         # 关闭 Milvus 连接
-        from services.retrieval.milvus_client import milvus_client
+        from services.retrieval.vector.milvus_client import milvus_client
         milvus_client.close()
         logger.info("  ✓ Milvus 连接已关闭")
     except Exception as e:
@@ -158,18 +163,15 @@ async def cleanup_resources():
 app = FastAPI(
     title=settings.APP_NAME,
     description="""
-    RAG 智能问答系统
-    
-    ## 功能特性
-    
-    * 📄 **文档管理** - 支持 PDF、Word、文本等多种格式
-    * 🔍 **智能检索** - 混合检索 + 重排序
-    * 💬 **智能问答** - 基于检索内容生成回答
-    * 🤖 **Agent 智能体** - 周报生成、风险分析等
-    * 📊 **项目管理** - 进度、成本、安全分析
-    
+    筑见 BuildView · 建筑工程「知识库 + 项目智能」双核平台
+
+    ## 双核能力
+
+    * 📚 **知识核** - 规范/合同/项目文档 RAG 问答 + 施工图理解 + 知识图谱
+    * 📊 **项目核** - 造价 / 进度 / 安全 / 风险 / 周报 五类 Agent 分析
+
     ## API 版本
-    
+
     当前版本：v1
     """,
     version=settings.APP_VERSION,
@@ -179,15 +181,20 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+# 注册统一异常处理器（AppException / RequestValidationError / 兜底 Exception）
+from core.exceptions import register_exception_handlers
+
+register_exception_handlers(app)
+
 
 # =========================================
 # 中间件配置
 # =========================================
 
-# CORS 配置
+# CORS 配置（限定来源，配合 allow_credentials）
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 生产环境应限制具体域名
+    allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -219,42 +226,6 @@ async def log_requests(request: Request, call_next):
     response.headers["X-Process-Time"] = str(process_time)
 
     return response
-
-
-# =========================================
-# 全局异常处理
-# =========================================
-
-@app.exception_handler(HTTPException)
-async def http_exception_handler(request: Request, exc: HTTPException):
-    """HTTP 异常处理"""
-    return JSONResponse(
-        status_code=exc.status_code,
-        content={
-            "success": False,
-            "error": {
-                "code": exc.status_code,
-                "message": exc.detail
-            }
-        }
-    )
-
-
-@app.exception_handler(Exception)
-async def general_exception_handler(request: Request, exc: Exception):
-    """通用异常处理"""
-    logger.error(f"未处理的异常: {exc}", exc_info=True)
-
-    return JSONResponse(
-        status_code=500,
-        content={
-            "success": False,
-            "error": {
-                "code": 500,
-                "message": "服务器内部错误" if settings.ENVIRONMENT == "production" else str(exc)
-            }
-        }
-    )
 
 
 # =========================================

@@ -31,7 +31,7 @@ from decimal import Decimal
 from sqlalchemy.orm import Session
 
 from models.project import ProjectBasic, CostDetail
-from services.project_service import ProjectService, CostService
+from services.project.project_service import ProjectService, CostService
 
 
 class CostTools:
@@ -40,6 +40,8 @@ class CostTools:
     def __init__(self, db: Session):
         """初始化工具实例"""
         self.db = db
+        self.project_service = ProjectService(db)
+        self.cost_service = CostService(db)
 
     def get_cost_overview(self, project_id: str) -> Dict[str, Any]:
         """
@@ -63,11 +65,11 @@ class CostTools:
             CPI = 挣值 / 实际成本
             挣值 = 总预算 × (进度率 / 100)
         """
-        project = ProjectService.get_project(self.db, project_id)
+        project = self.project_service.get_project(project_id)
         if not project:
             return {"error": f"Project {project_id} not found"}
 
-        costs = CostService.get_costs_by_project(self.db, project_id)
+        costs = self.cost_service.get_costs_by_project(project_id)
 
         # 1. 计算总成本
         total_planned = sum(float(c.planned_amount or 0) for c in costs)
@@ -118,7 +120,7 @@ class CostTools:
         分析四大类别成本：材料、人工、机械、分包
         识别超支最严重的类别
         """
-        costs = CostService.get_costs_by_project(self.db, project_id)
+        costs = self.cost_service.get_costs_by_project(project_id)
 
         category_stats = {}
         categories = ["材料", "人工", "机械", "分包"]
@@ -165,7 +167,7 @@ class CostTools:
         返回:
             超支项列表（按超支率降序）
         """
-        costs = CostService.get_costs_by_project(self.db, project_id)
+        costs = self.cost_service.get_costs_by_project(project_id)
 
         overruns = []
         for cost in costs:
@@ -232,7 +234,7 @@ class CostTools:
 
         对比同类型项目的成本水平
         """
-        project = ProjectService.get_project(self.db, project_id)
+        project = self.project_service.get_project(project_id)
         if not project:
             return {"error": "Project not found"}
 
@@ -279,8 +281,8 @@ class CostTools:
         end_date = date.today()
         start_date = end_date - timedelta(days=months * 30)
 
-        costs = CostService.get_costs_by_project(
-            self.db, project_id, start_date=start_date, end_date=end_date
+        costs = self.cost_service.get_costs_by_project(
+            project_id, start_date=start_date, end_date=end_date
         )
 
         # 按月分组

@@ -90,11 +90,10 @@ class GraphRepository:
         return results[0]["n"] if results else None
 
     def delete_document_and_relations(self, doc_id: str) -> Dict:
-        """删除文档及其所有关联节点和关系"""
+        """删除文档及其所有可达关联节点和关系（变长路径，一次删尽不留孤儿）"""
         query = """
         MATCH (d:Document {id: $doc_id})
-        OPTIONAL MATCH (d)-[r1]->(n)
-        OPTIONAL MATCH (n)-[r2]->()
+        OPTIONAL MATCH (d)-[*0..]->(n)
         DETACH DELETE d, n
         """
         return self.client.execute_write(query, {"doc_id": doc_id})
@@ -399,24 +398,35 @@ class GraphRepository:
         """
         获取文档的完整知识图谱
 
-        返回：
+        返回（保留节点标签与关系类型，便于消费方分类）：
             {
-                "nodes": [...],
-                "relationships": [...],
+                "document": {"id", "label", "properties"} | None,
+                "nodes": [{"id", "label", "properties"}],
+                "relationships": [
+                    {"id", "from_node_id", "to_node_id", "type", "properties"}
+                ],
             }
         """
         query = """
         MATCH (d:Document {id: $doc_id})
         OPTIONAL MATCH (d)-[r1]->(n1)
         OPTIONAL MATCH (n1)-[r2]->(n2)
-        WITH d, collect(DISTINCT n1) + collect(DISTINCT n2) as nodes,
-             collect(DISTINCT r1) + collect(DISTINCT r2) as rels
-        RETURN d as document, nodes, rels
+        WITH d,
+             [n IN collect(DISTINCT n1) + collect(DISTINCT n2) WHERE n IS NOT NULL] AS ns,
+             [r IN collect(DISTINCT r1) + collect(DISTINCT r2) WHERE r IS NOT NULL] AS rs
+        RETURN
+            {id: d.id, label: head(labels(d)), properties: properties(d)} AS document,
+            [n IN ns | {id: coalesce(n.id, elementId(n)), label: head(labels(n)),
+                        properties: properties(n)}] AS nodes,
+            [r IN rs | {id: elementId(r), type: type(r),
+                        from_node_id: coalesce(startNode(r).id, elementId(startNode(r))),
+                        to_node_id: coalesce(endNode(r).id, elementId(endNode(r))),
+                        properties: properties(r)}] AS relationships
         """
         results = self.client.execute_query(query, {"doc_id": doc_id})
         if results:
             return results[0]
-        return {"document": None, "nodes": [], "rels": []}
+        return {"document": None, "nodes": [], "relationships": []}
 
     def find_related_components(
         self,
@@ -486,15 +496,7 @@ class GraphRepository:
                 - rel_type: 关系类型
                 - properties: 关系属性（可选）
         """
-        query = """
-        UNWIND $rels as rel
-        MATCH (a {id: rel.from_id}), (b {id: rel.to_id})
-        CALL apoc.create.relationship(a, rel.rel_type, rel.properties, b)
-        YIELD rel as created
-        RETURN count(created) as count
-        """
-
-        # 如果没有 APOC 插件，使用简单方式
+        # 逐条创建关系，关系类型为动态值无法直接参数化，复用客户端方法
         created_count = 0
         for rel in relationships:
             try:

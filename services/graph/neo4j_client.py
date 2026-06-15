@@ -38,7 +38,7 @@ try:
     NEO4J_AVAILABLE = True
 except ImportError:
     NEO4J_AVAILABLE = False
-    logger.warning("neo4j 包未安装，Neo4j 功能将不可用。请运行: pip install neo4j")
+    logger.warning("neo4j 包未安装，Neo4j 功能将不可用。请运行: uv add neo4j")
 
 
 class Neo4jClient:
@@ -84,7 +84,7 @@ class Neo4jClient:
     def _init_driver(self):
         """初始化 Neo4j 驱动"""
         if not NEO4J_AVAILABLE:
-            raise RuntimeError("neo4j 包未安装，请运行: pip install neo4j")
+            raise RuntimeError("neo4j 包未安装，请运行: uv add neo4j")
 
         try:
             self._driver = GraphDatabase.driver(
@@ -417,15 +417,11 @@ class Neo4jClient:
         return self._driver is not None and self.ping()
 
     def close(self):
-        """关闭连接"""
+        """关闭连接（仅由应用 shutdown 统一调用）"""
         if self._driver:
             self._driver.close()
             self._driver = None
             logger.info("Neo4j 连接已关闭")
-
-    def __del__(self):
-        """析构时关闭连接"""
-        self.close()
 
 
 # =========================================

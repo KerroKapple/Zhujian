@@ -19,21 +19,11 @@
 import os
 from pathlib import Path
 from typing import Dict, List, Any, Optional
-from enum import Enum
 
 from services.document.pdf_parser import PDFParser
 from services.document.word_parser import WordParser
-from services.document.ocr_parser import OCRParser
+from core.constants import DocumentType
 from loguru import logger
-
-
-class DocumentType(str, Enum):
-    """文档类型枚举"""
-    PDF = "pdf"
-    WORD = "word"
-    IMAGE = "image"
-    TEXT = "text"
-    UNKNOWN = "unknown"
 
 
 class DocumentLoader:
@@ -66,10 +56,8 @@ class DocumentLoader:
         self.pdf_parser = PDFParser()
         self.word_parser = WordParser()
 
-        if enable_ocr:
-            self.ocr_parser = OCRParser()
-        else:
-            self.ocr_parser = None
+        # OCR 解析器懒加载（首次需要时才构造，避免重型依赖在初始化时崩溃）
+        self._ocr_parser = None
 
         # 文件扩展名映射
         self.extension_map = {
@@ -86,6 +74,16 @@ class DocumentLoader:
         }
 
         logger.info(f"文档加载器初始化完成 | OCR: {enable_ocr}")
+
+    @property
+    def ocr_parser(self):
+        """延迟加载 OCR 解析器（首次访问时构造，禁用 OCR 时返回 None）"""
+        if not self.enable_ocr:
+            return None
+        if self._ocr_parser is None:
+            from services.document.ocr_parser import OCRParser
+            self._ocr_parser = OCRParser()
+        return self._ocr_parser
 
     def load(self, file_path: str, use_ocr: bool = True) -> Dict[str, Any]:
         """
@@ -266,8 +264,8 @@ class DocumentLoader:
                 with open(file_path, 'r', encoding='gbk') as f:
                     text = f.read()
             except UnicodeDecodeError:
-                # 尝试其他编码
-                with open(file_path, 'r', encoding='latin-1') as f:
+                # 末级：UTF-8 容错解码，避免静默吞掉乱码
+                with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
                     text = f.read()
 
         return {

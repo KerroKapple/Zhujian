@@ -143,6 +143,22 @@ class WordParser:
             logger.warning(f"提取Word元数据失败: {str(e)}")
             return {}
 
+    @staticmethod
+    def _is_heading_style(style_name: str) -> bool:
+        """判断样式是否为标题（兼容英文 Heading 与中文 标题）"""
+        if not style_name:
+            return False
+        return style_name.startswith("Heading") or style_name.startswith("标题")
+
+    @staticmethod
+    def _heading_level(style_name: str) -> int:
+        """从样式名提取标题级别，无数字时返回 0"""
+        digits = "".join(ch for ch in style_name if ch.isdigit())
+        try:
+            return int(digits) if digits else 0
+        except (ValueError, TypeError):
+            return 0
+
     def _extract_paragraphs(self, doc: Document) -> List[Dict[str, Any]]:
         """
         提取段落信息
@@ -175,16 +191,11 @@ class WordParser:
                 # 获取样式信息
                 style_name = paragraph.style.name if paragraph.style else "Normal"
 
-                # 判断是否为标题
-                is_heading = style_name.startswith("Heading")
+                # 判断是否为标题（兼容中文样式名 "标题 1"）
+                is_heading = self._is_heading_style(style_name)
 
                 # 提取标题级别
-                level = 0
-                if is_heading:
-                    try:
-                        level = int(style_name.replace("Heading", "").strip())
-                    except:
-                        level = 0
+                level = self._heading_level(style_name) if is_heading else 0
 
                 para_data = {
                     "index": index,
@@ -301,16 +312,12 @@ class WordParser:
             headings = []
 
             for paragraph in doc.paragraphs:
-                if paragraph.style.name.startswith("Heading"):
-                    try:
-                        level = int(paragraph.style.name.replace("Heading", "").strip())
-                    except:
-                        level = 0
-
+                style_name = paragraph.style.name if paragraph.style else "Normal"
+                if self._is_heading_style(style_name):
                     headings.append({
                         "text": paragraph.text.strip(),
-                        "level": level,
-                        "style": paragraph.style.name
+                        "level": self._heading_level(style_name),
+                        "style": style_name
                     })
 
             return headings

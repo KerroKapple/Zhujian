@@ -205,7 +205,7 @@ class RelationExtractor:
 
         for spec in specifications:
             rel = create_relationship(
-                from_node_id=f"doc_{document_id}",
+                from_node_id=document_id,
                 to_node_id=spec.id,
                 rel_type="refers_to",
                 properties={
@@ -228,7 +228,7 @@ class RelationExtractor:
         for comp in components:
             rel = create_relationship(
                 from_node_id=comp.id,
-                to_node_id=f"doc_{document_id}",
+                to_node_id=document_id,
                 rel_type="belongs_to",
                 properties={
                     "source": "document",
@@ -249,7 +249,7 @@ class RelationExtractor:
         for mat in materials:
             rel = create_relationship(
                 from_node_id=mat.id,
-                to_node_id=f"doc_{document_id}",
+                to_node_id=document_id,
                 rel_type="belongs_to",
                 properties={
                     "source": "document",
@@ -287,54 +287,50 @@ class RelationExtractor:
         """
         提取构件连接关系
 
-        基于构件编号和类型推断连接关系
-        例如：梁连接柱，板支撑在梁上
+        以页码共现作为连接依据：同一页出现的构件在物理上相邻，
+        据此推断 梁-柱、板-梁 连接关系。
+        构件未带页码时退化为整张图纸共现（page=0）。
         """
         relations = []
 
-        # 按类型分组
+        def page_of(comp: ComponentNode) -> int:
+            return int(comp.properties.get("page", 0) or 0)
+
+        # 按 (页码, 类型) 分组
         beams = [c for c in components if c.properties.get("component_type") == "beam"]
         columns = [c for c in components if c.properties.get("component_type") == "column"]
         slabs = [c for c in components if c.properties.get("component_type") == "slab"]
 
-        # 梁-柱连接（同一楼层的梁和柱）
+        # 梁-柱连接（同页共现）
         for beam in beams:
-            beam_floor = beam.properties.get("floor", "")
-
             for column in columns:
-                column_floor = column.properties.get("floor", "")
-
-                if beam_floor == column_floor and beam_floor:
-                    rel = create_relationship(
+                if page_of(beam) == page_of(column):
+                    relations.append(create_relationship(
                         from_node_id=beam.id,
                         to_node_id=column.id,
                         rel_type="connected_to",
                         properties={
                             "connection_type": "beam_column",
-                            "source": "inference",
+                            "page": page_of(beam),
+                            "source": "page_co_occurrence",
                             "confidence": 0.6,
                         }
-                    )
-                    relations.append(rel)
+                    ))
 
-        # 板-梁连接（同一楼层的板和梁）
+        # 板-梁连接（同页共现）
         for slab in slabs:
-            slab_floor = slab.properties.get("floor", "")
-
             for beam in beams:
-                beam_floor = beam.properties.get("floor", "")
-
-                if slab_floor == beam_floor and slab_floor:
-                    rel = create_relationship(
+                if page_of(slab) == page_of(beam):
+                    relations.append(create_relationship(
                         from_node_id=slab.id,
                         to_node_id=beam.id,
                         rel_type="connected_to",
                         properties={
                             "connection_type": "slab_beam",
-                            "source": "inference",
+                            "page": page_of(slab),
+                            "source": "page_co_occurrence",
                             "confidence": 0.6,
                         }
-                    )
-                    relations.append(rel)
+                    ))
 
         return relations

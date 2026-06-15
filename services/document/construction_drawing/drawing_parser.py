@@ -64,34 +64,32 @@ class ConstructionDrawingParser:
     - 提取材料表
     """
 
-    # 构件编号正则模式
+    # 构件编号正则模式（精确前缀分组，避免误抽与梁柱重叠）
+    # \b 前缀边界 + 固定前缀枚举，按编号长度从长到短排列
     COMPONENT_PATTERNS = {
-        # 结构构件
+        # 梁：WKL/JKL/KL/LL/XL/DL(地梁)/L 等
         "beam": [
-            r"[KDL]+[A-Z]*[-\s]?\d+[a-zA-Z]?",      # 梁：KL-1, DL-2, LL-3
-            r"WKL[-\s]?\d+",                         # 屋面框架梁
-            r"JKL[-\s]?\d+",                         # 基础框架梁
+            r"\b(?:WKL|JKL|KZL|KL|LL|XL|DL|L)[-\s]?\d+[a-zA-Z]?\b",
         ],
+        # 柱：KZZ/KZ/GZ/AZ/Z 等
         "column": [
-            r"[KZ]+[A-Z]*[-\s]?\d+[a-zA-Z]?",       # 柱：KZ-1, KZZ-2
-            r"GZ[-\s]?\d+",                          # 构造柱
-            r"AZ[-\s]?\d+",                          # 暗柱
+            r"\b(?:KZZ|KZ|GZ|AZ|Z)[-\s]?\d+[a-zA-Z]?\b",
         ],
+        # 板：YB/LB/B 等
         "slab": [
-            r"[LB]+[-\s]?\d+[a-zA-Z]?",             # 板：LB-1
-            r"YB[-\s]?\d+",                          # 悬挑板
+            r"\b(?:YB|LB|B)[-\s]?\d+[a-zA-Z]?\b",
         ],
+        # 墙：QZ/JLQ/Q 等
         "wall": [
-            r"[QZ]+[-\s]?\d+[a-zA-Z]?",             # 墙：QZ-1
-            r"Q[-\s]?\d+",                           # 剪力墙
+            r"\b(?:QZ|JLQ|Q)[-\s]?\d+[a-zA-Z]?\b",
         ],
+        # 基础：DJ/JC/ZJ/CT 等
         "foundation": [
-            r"[DJ]+[-\s]?\d+[a-zA-Z]?",             # 基础：DJ-1
-            r"JC[-\s]?\d+",                          # 基础承台
-            r"ZJ[-\s]?\d+",                          # 桩基
+            r"\b(?:DJ|JC|ZJ|CT)[-\s]?\d+[a-zA-Z]?\b",
         ],
+        # 楼梯：LT
         "stair": [
-            r"LT[-\s]?\d+",                          # 楼梯
+            r"\bLT[-\s]?\d+[a-zA-Z]?\b",
         ],
     }
 
@@ -214,8 +212,10 @@ class ConstructionDrawingParser:
             # 提取图纸基本信息
             result["drawing_info"] = self._extract_drawing_info(text)
 
-            # 提取构件
-            result["components"] = self._extract_components(text)
+            # 提取构件（按页携带页码，便于后续共现连接推断）
+            result["components"] = self._extract_components(
+                text, result.get("pages", [])
+            )
 
             # 提取材料
             result["materials"] = self._extract_materials(text)
@@ -357,24 +357,34 @@ class ConstructionDrawingParser:
 
         return info
 
-    def _extract_components(self, text: str) -> List[Dict]:
-        """提取构件信息"""
+    def _extract_components(
+        self, text: str, pages: Optional[List[Dict]] = None
+    ) -> List[Dict]:
+        """提取构件信息（携带页码，全局去重）"""
         components = []
         seen = set()
 
-        for comp_type, patterns in self.COMPONENT_PATTERNS.items():
-            for pattern in patterns:
-                matches = re.findall(pattern, text, re.IGNORECASE)
-                for match in matches:
-                    code = match.upper().replace(" ", "")
-                    if code not in seen:
-                        seen.add(code)
-                        components.append({
-                            "type": comp_type,
-                            "code": code,
-                            "source": "pattern_match",
-                            "confidence": 0.9,
-                        })
+        # 有分页文本则逐页提取并记录页码，否则退化为整篇（page=0）
+        page_texts = (
+            [(p.get("page_num", 0), p.get("text", "")) for p in pages]
+            if pages else [(0, text)]
+        )
+
+        for page_num, page_text in page_texts:
+            for comp_type, patterns in self.COMPONENT_PATTERNS.items():
+                for pattern in patterns:
+                    matches = re.findall(pattern, page_text, re.IGNORECASE)
+                    for match in matches:
+                        code = match.upper().replace(" ", "")
+                        if code not in seen:
+                            seen.add(code)
+                            components.append({
+                                "type": comp_type,
+                                "code": code,
+                                "page": page_num,
+                                "source": "pattern_match",
+                                "confidence": 0.9,
+                            })
 
         return components
 

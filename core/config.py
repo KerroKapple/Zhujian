@@ -20,10 +20,9 @@
 
 ========================================
 """
-from pydantic_settings import BaseSettings
-from pydantic import Field, validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field, field_validator
 from typing import Optional, List
-import os
 from pathlib import Path
 
 
@@ -40,7 +39,7 @@ class Settings(BaseSettings):
     # =========================================
     # 应用基础配置
     # =========================================
-    APP_NAME: str = "Enterprise RAG System"
+    APP_NAME: str = "筑见 BuildView"
     APP_VERSION: str = "1.0.0"
     API_PREFIX: str = "/api/v1"  # API路由前缀
 
@@ -102,7 +101,7 @@ class Settings(BaseSettings):
     MILVUS_COLLECTION_CONTRACT: str = "rag_contracts"  # 第三层：合同库（权限要求最高）
 
     # --- 向量配置 ---
-    VECTOR_DIM: int = Field(default=768, description="向量维度（取决于Embedding模型）")
+    VECTOR_DIM: int = Field(default=1024, description="向量维度（取决于Embedding模型）")
 
     # 索引类型说明：
     # - IVF_FLAT：平衡性能和准确率，适合中等规模（推荐）
@@ -196,7 +195,7 @@ class Settings(BaseSettings):
     # - BAAI/bge-large-zh：更大更强，但更慢
     # - shibing624/text2vec-base-chinese：轻量级
     EMBEDDING_MODEL_NAME: str = Field(
-        default="hfl/chinese-roberta-wwm-ext",
+        default="BAAI/bge-large-zh-v1.5",
         description="中文Embedding模型名称"
     )
 
@@ -305,6 +304,12 @@ class Settings(BaseSettings):
         description="是否启用权限检查（生产环境必须开启）"
     )
 
+    # --- 跨域配置 ---
+    CORS_ORIGINS: List[str] = Field(
+        default=["http://localhost:5173", "http://localhost:3000"],
+        description="允许的跨域来源"
+    )
+
     # --- JWT令牌配置 ---
     # JWT：用于用户认证的令牌机制
     JWT_SECRET_KEY: str = Field(
@@ -341,49 +346,44 @@ class Settings(BaseSettings):
     # =========================================
     # 🛡️ 作用：在应用启动前检查配置是否合法
 
-    @validator("CHUNK_SIZE")
+    @field_validator("CHUNK_SIZE")
+    @classmethod
     def validate_chunk_size(cls, v):
         """验证chunk_size必须大于0"""
         if v <= 0:
             raise ValueError("CHUNK_SIZE必须大于0")
         return v
 
-    @validator("CHUNK_OVERLAP")
-    def validate_chunk_overlap(cls, v, values):
+    @field_validator("CHUNK_OVERLAP")
+    @classmethod
+    def validate_chunk_overlap(cls, v, info):
         """验证overlap不能大于chunk_size"""
-        chunk_size = values.get("CHUNK_SIZE", 512)
+        chunk_size = info.data.get("CHUNK_SIZE", 512)
         if v >= chunk_size:
             raise ValueError("CHUNK_OVERLAP必须小于CHUNK_SIZE")
         return v
 
-    @validator("BM25_WEIGHT", "VECTOR_WEIGHT", "RERANK_WEIGHT")
+    @field_validator("BM25_WEIGHT", "VECTOR_WEIGHT", "RERANK_WEIGHT")
+    @classmethod
     def validate_weights(cls, v):
         """验证权重在0-1之间"""
         if not 0 <= v <= 1:
             raise ValueError("权重必须在0-1之间")
         return v
 
-    def __init__(self, **kwargs):
-        """
-        初始化配置
-
-        自动创建必要的目录：
-        - data/raw_docs：存放原始文档
-        - data/processed：存放处理后的文档
-        - logs：存放日志文件
-        """
-        super().__init__(**kwargs)
-        # 创建目录（如果不存在）
+    def ensure_dirs(self) -> None:
+        """显式创建运行所需目录（原始文档、处理结果、日志）"""
         self.DATA_DIR.mkdir(parents=True, exist_ok=True)
         self.RAW_DOCS_DIR.mkdir(parents=True, exist_ok=True)
         self.PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
         self.LOG_DIR.mkdir(parents=True, exist_ok=True)
 
-    class Config:
-        """Pydantic配置类"""
-        env_file = ".env"  # 从.env文件读取配置
-        env_file_encoding = "utf-8"  # 使用UTF-8编码
-        case_sensitive = True  # 环境变量名区分大小写
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=True,
+        extra="ignore",
+    )
 
 
 # =========================================

@@ -1,0 +1,56 @@
+/* 工程蓝 Console 设计 Token（设计基线 3.1） */
+:root {
+  /* 主操作色与深工程蓝（侧栏/品牌） */
+  --c-primary: #1f6feb;
+  --c-primary-hover: #3b82f6;
+  --c-primary-active: #1a5fd0;
+  --c-ink: #16335c;
+  --c-ink-2: #0f274d;
+
+  /* 语义色 */
+  --c-success: #2da44e;
+  --c-warning: #d29922;
+  --c-danger: #cf222e;
+  --c-info: #1f6feb;
+
+  /* 中性色 */
+  --c-bg: #eef1f5;
+  --c-surface: #fff;
+  --c-surface-2: #f7f9fc;
+  --c-border: #e3e8ef;
+  --c-text: #1f2733;
+  --c-text-2: #5b6675;
+  --c-text-3: #8a93a3;
+
+  /* 圆角 */
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 14px;
+
+  /* 阴影 */
+  --shadow-card: 0 1px 3px rgba(20, 40, 80, 0.06);
+  --shadow-pop: 0 6px 24px rgba(20, 40, 80, 0.12);
+
+  /* 间距（4 的倍数） */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+
+  /* 侧栏 */
+  --aside-w: 220px;
+  --aside-w-collapsed: 64px;
+  --header-h: 56px;
+
+  /* 暗色看板专用（风险/安全大屏） */
+  --d-bg: #0d1117;
+  --d-surface: #161c27;
+  --d-border: #232b38;
+  --d-text: #e6edf3;
+  --d-text-2: #8b96a5;
+  --d-accent: #2dd4bf;
+  --d-accent-2: #f59e0b;
+}

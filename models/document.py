@@ -19,9 +19,8 @@ from sqlalchemy import (
     Column, String, Integer, DateTime, Text,
     Boolean, JSON, ForeignKey, Enum as SQLEnum, Float
 )
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import relationship
-from datetime import datetime
+from sqlalchemy.orm import declarative_base, relationship
+from datetime import datetime, timezone
 import uuid
 
 from core.constants import DocumentType, DocumentStatus, PermissionLevel
@@ -72,7 +71,7 @@ class Document(Base):
     )
 
     doc_type = Column(
-        SQLEnum(DocumentType),
+        SQLEnum(DocumentType, values_callable=lambda e: [x.value for x in e]),
         nullable=False,
         default=DocumentType.OTHER,
         index=True,
@@ -81,7 +80,7 @@ class Document(Base):
 
     # ===== 状态信息 =====
     status = Column(
-        SQLEnum(DocumentStatus),
+        SQLEnum(DocumentStatus, values_callable=lambda e: [x.value for x in e]),
         nullable=False,
         default=DocumentStatus.PENDING,
         index=True,
@@ -121,11 +120,11 @@ class Document(Base):
 
     # ===== 权限信息 =====
     permission_level = Column(
-        SQLEnum(PermissionLevel),
+        SQLEnum(PermissionLevel, values_callable=lambda e: [x.value for x in e]),
         nullable=False,
         default=PermissionLevel.INTERNAL,
         index=True,
-        comment="权限级别：public/internal/department/project/confidential"
+        comment="权限级别：public/internal/confidential/restricted"
     )
 
     department = Column(
@@ -208,23 +207,23 @@ class Document(Base):
 
     # ===== 时间信息 =====
     created_at = Column(
-        DateTime,
-        default=datetime.utcnow,
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
         nullable=False,
         index=True,
         comment="创建时间"
     )
 
     updated_at = Column(
-        DateTime,
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow,
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
         nullable=False,
         comment="更新时间"
     )
 
     processed_at = Column(
-        DateTime,
+        DateTime(timezone=True),
         nullable=True,
         comment="处理完成时间"
     )
@@ -246,7 +245,7 @@ class Document(Base):
     )
 
     # 一对一：文档元数据
-    metadata = relationship(
+    doc_metadata = relationship(
         "DocumentMetadata",
         back_populates="document",
         uselist=False,
@@ -380,7 +379,7 @@ class DocumentChunk(Base):
     )
 
     # ===== 元数据 =====
-    metadata = Column(
+    chunk_metadata = Column(
         JSON,
         nullable=True,
         comment="额外的元数据（JSON格式）"
@@ -388,8 +387,8 @@ class DocumentChunk(Base):
 
     # ===== 时间信息 =====
     created_at = Column(
-        DateTime,
-        default=datetime.utcnow,
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
         nullable=False,
         comment="创建时间"
     )
@@ -486,7 +485,7 @@ class DocumentMetadata(Base):
     )
 
     extracted_date = Column(
-        DateTime,
+        DateTime(timezone=True),
         nullable=True,
         comment="从文档中提取的日期"
     )
@@ -550,22 +549,22 @@ class DocumentMetadata(Base):
 
     # ===== 时间信息 =====
     created_at = Column(
-        DateTime,
-        default=datetime.utcnow,
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
         nullable=False,
         comment="创建时间"
     )
 
     updated_at = Column(
-        DateTime,
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow,
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
         nullable=False,
         comment="更新时间"
     )
 
     # ===== 关联关系 =====
-    document = relationship("Document", back_populates="metadata")
+    document = relationship("Document", back_populates="doc_metadata")
 
     def __repr__(self):
         return f"<DocumentMetadata(id={self.id}, doc_id={self.document_id})>"

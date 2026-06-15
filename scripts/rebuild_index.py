@@ -33,10 +33,9 @@ from core.constants import MilvusCollection
 
 # 导入服务模块
 from services.retrieval.bm25.bm25_engine import BM25Retriever
-from services.embedding.embedding_model import EmbeddingModel
-from services.embedding.embedder import Embedder
 from repository.vector_repo import VectorRepository
 from repository.document_repo import DocumentRepository
+from services.retrieval.vector.milvus_client import milvus_client
 
 # 数据库
 from sqlalchemy import create_engine
@@ -67,14 +66,8 @@ class IndexRebuilder:
         # 初始化向量库
         self.vector_repo = VectorRepository()
 
-        # 初始化 Embedding
-        self.embedding_model = EmbeddingModel(
-            model_name=settings.EMBEDDING_MODEL_NAME
-        )
-        self.embedder = Embedder(
-            embedding_model=self.embedding_model,
-            batch_size=settings.EMBEDDING_BATCH_SIZE
-        )
+        # Embedding 懒加载（首次向量化时才构造重型 ML 层）
+        self._embedder = None
 
         # 初始化 BM25
         self.bm25_retriever = BM25Retriever()
@@ -88,6 +81,25 @@ class IndexRebuilder:
         }
 
         logger.info("索引重建器初始化完成")
+
+    @property
+    def embedder(self):
+        """懒加载向量化服务，缺失重型依赖时给出清晰提示"""
+        if self._embedder is None:
+            try:
+                from services.embedding.embedding_model import EmbeddingModel
+                from services.embedding.embedder import Embedder
+            except ImportError as e:
+                raise RuntimeError(
+                    f"缺少向量化依赖（重型 ML 层）：{e}。请运行 uv add torch sentence-transformers"
+                ) from e
+
+            embedding_model = EmbeddingModel(model_name=settings.EMBEDDING_MODEL_NAME)
+            self._embedder = Embedder(
+                embedding_model=embedding_model,
+                batch_size=settings.EMBEDDING_BATCH_SIZE
+            )
+        return self._embedder
 
     def rebuild_bm25_index(
         self,
@@ -321,7 +333,7 @@ class IndexRebuilder:
         """关闭连接"""
         try:
             self.session.close()
-            self.vector_repo.disconnect()
+            milvus_client.close()
             logger.info("连接已关闭")
         except Exception as e:
             logger.error(f"关闭连接失败: {e}")

@@ -24,53 +24,49 @@ import re
 import hashlib
 import secrets
 import string
-from typing import Optional, List, Dict, Any
 from pathlib import Path
 import base64
 
-from passlib.context import CryptContext
+import bcrypt
 from loguru import logger
+
+from core.config import settings
+
+# bcrypt 仅处理前 72 字节，超出部分静默丢弃
+_BCRYPT_MAX_BYTES = 72
+
+# JWT 默认占位密钥，生产环境必须替换
+_JWT_PLACEHOLDER = "your-secret-key-change-in-production"
+
+# =========================================
+# JWT 密钥校验（应用启动时调用，不在导入期执行）
+# =========================================
+def check_security_config() -> None:
+    """校验安全相关配置；生产环境用占位密钥直接 fail-fast，开发环境仅告警。
+
+    由应用启动钩子调用，避免导入期因默认配置阻断测试/脚本/工具链。
+    """
+    if settings.JWT_SECRET_KEY == _JWT_PLACEHOLDER:
+        if settings.ENVIRONMENT == "production":
+            raise RuntimeError("生产环境必须修改 JWT_SECRET_KEY，禁止使用默认占位密钥")
+        logger.warning("JWT_SECRET_KEY 仍为默认占位值，请在生产环境前修改")
 
 # =========================================
 # 密码加密
 # =========================================
 
-# 密码加密上下文
-pwd_context = CryptContext(
-    schemes=["bcrypt"],
-    deprecated="auto",
-    bcrypt__rounds=12  # 加密强度
-)
-
 
 def hash_password(password: str) -> str:
-    """
-    密码哈希
-
-    使用bcrypt算法进行加密
-
-    参数：
-        password: 明文密码
-
-    返回：
-        哈希后的密码
-    """
-    return pwd_context.hash(password)
+    """密码哈希（bcrypt，cost=12，截断到72字节）"""
+    pw = password.encode("utf-8")[:_BCRYPT_MAX_BYTES]
+    return bcrypt.hashpw(pw, bcrypt.gensalt(rounds=12)).decode("utf-8")
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """
-    验证密码
-
-    参数：
-        plain_password: 明文密码
-        hashed_password: 哈希密码
-
-    返回：
-        是否匹配
-    """
+    """验证密码，任何异常均视为不匹配"""
     try:
-        return pwd_context.verify(plain_password, hashed_password)
+        pw = plain_password.encode("utf-8")[:_BCRYPT_MAX_BYTES]
+        return bcrypt.checkpw(pw, hashed_password.encode("utf-8"))
     except Exception as e:
         logger.error(f"密码验证失败: {e}")
         return False
@@ -132,19 +128,17 @@ def generate_token(length: int = 32) -> str:
     return secrets.token_urlsafe(length)
 
 
+# 允许的哈希算法白名单，禁用 md5/sha1 等弱算法
+_ALLOWED_HASH_ALGORITHMS = {"sha256", "sha512"}
+
+
 def hash_data(data: str, algorithm: str = "sha256") -> str:
-    """
-    数据哈希
-
-    参数：
-        data: 待哈希的数据
-        algorithm: 哈希算法 (md5, sha1, sha256, sha512)
-
-    返回：
-        哈希值（十六进制）
-    """
-    hash_func = getattr(hashlib, algorithm)
-    return hash_func(data.encode()).hexdigest()
+    """数据哈希，仅允许 sha256/sha512，非法算法抛 ValueError"""
+    if algorithm not in _ALLOWED_HASH_ALGORITHMS:
+        raise ValueError(f"不支持的哈希算法: {algorithm}，仅允许 {_ALLOWED_HASH_ALGORITHMS}")
+    hash_func = hashlib.new(algorithm)
+    hash_func.update(data.encode("utf-8"))
+    return hash_func.hexdigest()
 
 
 def encode_base64(data: str) -> str:
@@ -240,6 +234,9 @@ class InputValidator:
         """
         if len(password) < 8:
             return False, "密码至少8个字符"
+
+        if len(password.encode("utf-8")) > _BCRYPT_MAX_BYTES:
+            return False, f"密码UTF-8编码不得超过{_BCRYPT_MAX_BYTES}字节"
 
         if not re.search(r'[A-Z]', password):
             return False, "密码必须包含大写字母"

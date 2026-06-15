@@ -284,7 +284,7 @@ class QAPromptFactory:
         返回：
             完整的Prompt
         """
-        # 格式化上下文
+        # 格式化上下文：高分文档优先纳入，单条超长则截断而非整条丢弃后续
         context_parts = []
         current_length = 0
 
@@ -292,11 +292,16 @@ class QAPromptFactory:
             text = ctx.get('text', '')
             metadata = ctx.get('metadata', {})
 
-            # 检查长度
-            if current_length + len(text) > max_context_length:
+            # 剩余预算耗尽则停止
+            remaining = max_context_length - current_length
+            if remaining <= 0:
                 break
 
-            # 格式化单个上下文
+            # 单条超长：截断到剩余预算，保证高分文档优先纳入
+            if len(text) > remaining:
+                text = text[:remaining]
+
+            # 格式化单个上下文（source 与 pipeline 一致传 doc_id）
             if language == 'zh':
                 if include_metadata:
                     source = metadata.get('source', f'文档{idx}')

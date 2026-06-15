@@ -19,9 +19,6 @@ OCR 光学字符识别解析器
 import os
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Tuple
-import numpy as np
-from PIL import Image
-import pdf2image
 
 from core.logger import logger, log_execution
 from core.config import settings
@@ -62,14 +59,18 @@ class OCRParser:
 
             from paddleocr import PaddleOCR
 
-            # 初始化OCR
-            # use_angle_cls=True: 支持旋转文字识别
-            # lang: 语言选择（ch表示中文，en表示英文）
-            self.ocr = PaddleOCR(
-                use_angle_cls=True,
-                lang=settings.OCR_LANGUAGE,
-                show_log=False  # 不显示详细日志
-            )
+            # 初始化OCR；新版已移除 show_log，旧版需要它，做参数容错
+            try:
+                self.ocr = PaddleOCR(
+                    use_angle_cls=True,
+                    lang=settings.OCR_LANGUAGE,
+                )
+            except TypeError:
+                self.ocr = PaddleOCR(
+                    use_angle_cls=True,
+                    lang=settings.OCR_LANGUAGE,
+                    show_log=False,
+                )
 
             logger.info(f"OCR初始化成功，语言: {settings.OCR_LANGUAGE}")
 
@@ -77,6 +78,57 @@ class OCRParser:
             logger.error(f"OCR初始化失败: {str(e)}")
             logger.warning("OCR功能将不可用")
             self.ocr = None
+
+    def _run_ocr(self, image):
+        """执行 OCR；兼容新旧 PaddleOCR 的 cls 参数差异"""
+        try:
+            return self.ocr.ocr(image, cls=True)
+        except TypeError:
+            # 新版移除 cls 参数
+            return self.ocr.ocr(image)
+
+    @staticmethod
+    def _parse_ocr_result(result) -> List[Dict[str, Any]]:
+        """
+        归一化 PaddleOCR 输出为统一行结构
+
+        兼容两种结构：
+        - 旧版：[[ [bbox, (text, conf)], ... ]]
+        - 新版：[{"rec_texts": [...], "rec_scores": [...], "rec_polys"/"dt_polys": [...]}]
+        """
+        lines: List[Dict[str, Any]] = []
+
+        if not result:
+            return lines
+
+        first = result[0]
+        if first is None:
+            return lines
+
+        # 新版字典结构
+        if isinstance(first, dict):
+            texts = first.get("rec_texts", []) or []
+            scores = first.get("rec_scores", []) or []
+            boxes = first.get("rec_polys") or first.get("dt_polys") or []
+            for i, text in enumerate(texts):
+                conf = float(scores[i]) if i < len(scores) else 0.0
+                bbox = boxes[i] if i < len(boxes) else None
+                lines.append({"text": text, "confidence": conf, "bbox": bbox})
+            return lines
+
+        # 旧版列表结构
+        for line in first:
+            if not line or len(line) < 2:
+                continue
+            bbox = line[0]
+            rec = line[1]
+            if isinstance(rec, (list, tuple)) and len(rec) >= 2:
+                text, conf = rec[0], float(rec[1])
+            else:
+                text, conf = str(rec), 0.0
+            lines.append({"text": text, "confidence": conf, "bbox": bbox})
+
+        return lines
 
     @log_execution("OCR识别图片")
     def parse_image(self, image_path: str) -> Dict[str, Any]:
@@ -104,10 +156,11 @@ class OCRParser:
 
             logger.info(f"开始OCR识别: {image_path}")
 
-            # 执行OCR
-            result = self.ocr.ocr(image_path, cls=True)
+            # 执行OCR并归一化结果
+            result = self._run_ocr(image_path)
+            lines_data = self._parse_ocr_result(result)
 
-            if not result or not result[0]:
+            if not lines_data:
                 logger.warning("OCR未识别到文字")
                 return {
                     "text": "",
@@ -116,25 +169,8 @@ class OCRParser:
                     "char_count": 0
                 }
 
-            # 解析OCR结果
-            lines_data = []
-            all_text = []
-            confidences = []
-
-            for line in result[0]:
-                # line格式: [bbox, (text, confidence)]
-                bbox = line[0]  # 边界框坐标
-                text = line[1][0]  # 识别的文本
-                confidence = line[1][1]  # 置信度
-
-                lines_data.append({
-                    "text": text,
-                    "confidence": confidence,
-                    "bbox": bbox
-                })
-
-                all_text.append(text)
-                confidences.append(confidence)
+            all_text = [line["text"] for line in lines_data]
+            confidences = [line["confidence"] for line in lines_data]
 
             # 合并文本
             full_text = "\n".join(all_text)
@@ -199,6 +235,10 @@ class OCRParser:
 
             logger.info(f"开始OCR识别PDF: {pdf_path}")
 
+            # 懒加载重型依赖
+            import pdf2image
+            import numpy as np
+
             # 将PDF转换为图片
             images = pdf2image.convert_from_path(
                 pdf_path,
@@ -219,10 +259,11 @@ class OCRParser:
                 # 将PIL Image转换为numpy数组
                 img_array = np.array(image)
 
-                # 执行OCR
-                result = self.ocr.ocr(img_array, cls=True)
+                # 执行OCR并归一化结果
+                result = self._run_ocr(img_array)
+                page_lines = self._parse_ocr_result(result)
 
-                if not result or not result[0]:
+                if not page_lines:
                     # 该页没有识别到文字
                     pages_data.append({
                         "page_num": page_num,
@@ -232,22 +273,8 @@ class OCRParser:
                     })
                     continue
 
-                # 解析该页的OCR结果
-                page_lines = []
-                page_text = []
-                page_confidences = []
-
-                for line in result[0]:
-                    text = line[1][0]
-                    confidence = line[1][1]
-
-                    page_lines.append({
-                        "text": text,
-                        "confidence": confidence
-                    })
-
-                    page_text.append(text)
-                    page_confidences.append(confidence)
+                page_text = [line["text"] for line in page_lines]
+                page_confidences = [line["confidence"] for line in page_lines]
 
                 # 该页的文本和置信度
                 page_full_text = "\n".join(page_text)

@@ -11,7 +11,7 @@ Services 模块初始化
 """
 
 # ===== 导入项目相关服务 =====
-from services.project_service import (
+from services.project.project_service import (
     ProjectService,
     TaskService,
     CostService,

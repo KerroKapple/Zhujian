@@ -319,55 +319,64 @@ class CostAnalysisAgent:
         )
 
     def _build_category_costs(self, data: Dict) -> List[CategoryCost]:
-        """构建分类成本列表"""
+        """构建分类成本列表（对齐 get_cost_by_category：键为中文类别，金额键为 planned）"""
         categories = data.get("categories", {})
         result = []
-        category_names = {
-            "material": "材料费", "labor": "人工费", "equipment": "机械费",
-            "subcontract": "分包费", "management": "管理费", "other": "其他费用"
-        }
         for cat_key, cat_data in categories.items():
+            planned = cat_data.get("planned", 0)
+            actual = cat_data.get("actual", 0)
             result.append(CategoryCost(
                 category=cat_key,
-                category_name=category_names.get(cat_key, cat_key),
-                budget=cat_data.get("budget", 0),
-                actual=cat_data.get("actual", 0),
+                category_name=cat_key,
+                budget=planned,
+                actual=actual,
                 variance=cat_data.get("variance", 0),
                 variance_rate=cat_data.get("variance_rate", 0),
-                percentage=cat_data.get("percentage", 0)
+                percentage=round(actual / planned * 100, 2) if planned > 0 else 0
             ))
         return result
 
     def _build_overruns(self, data: List[Dict]) -> List[CostOverrun]:
-        """构建超支项列表"""
+        """构建超支项列表（对齐 identify_cost_overruns 返回结构）"""
         result = []
         for item in data:
-            overrun_rate = item.get("overrun_rate", 0)
+            overrun_rate = item.get("variance_rate", 0)
             severity = "critical" if overrun_rate > 15 else "high" if overrun_rate > 10 else "medium" if overrun_rate > 5 else "low"
             result.append(CostOverrun(
-                item_id=item.get("item_id", ""),
-                item_name=item.get("item_name", ""),
+                item_id=str(item.get("cost_id", "")),
+                item_name=item.get("item", ""),
                 category=item.get("category", ""),
-                budget=item.get("budget", 0),
+                budget=item.get("planned", 0),
                 actual=item.get("actual", 0),
-                overrun=item.get("overrun", 0),
+                overrun=item.get("variance", 0),
                 overrun_rate=overrun_rate,
-                reason=item.get("reason", ""),
+                reason=item.get("severity", ""),
                 severity=severity
             ))
         return result
 
     def _build_trends(self, data: Dict) -> List[CostTrend]:
-        """构建趋势数据"""
-        monthly_data = data.get("monthly_data", [])
-        return [CostTrend(
-            period=month.get("period", ""),
-            budget=month.get("budget", 0),
-            actual=month.get("actual", 0),
-            cumulative_budget=month.get("cumulative_budget", 0),
-            cumulative_actual=month.get("cumulative_actual", 0),
-            cpi=month.get("cpi", 1)
-        ) for month in monthly_data]
+        """构建趋势数据（analyze_cost_trend 的 monthly_data 是按月键控的 dict）"""
+        monthly_data = data.get("monthly_data", {})
+        trends = []
+        cumulative_budget = 0.0
+        cumulative_actual = 0.0
+        for period in sorted(monthly_data.keys()):
+            stats = monthly_data[period]
+            planned = stats.get("planned", 0)
+            actual = stats.get("actual", 0)
+            cumulative_budget += planned
+            cumulative_actual += actual
+            cpi = round(planned / actual, 3) if actual > 0 else 1.0
+            trends.append(CostTrend(
+                period=period,
+                budget=planned,
+                actual=actual,
+                cumulative_budget=cumulative_budget,
+                cumulative_actual=cumulative_actual,
+                cpi=cpi
+            ))
+        return trends
 
     def _determine_trend_direction(self, trends: List[CostTrend]) -> str:
         """判断趋势方向"""
@@ -382,14 +391,16 @@ class CostAnalysisAgent:
         return "stable"
 
     def _build_prediction(self, data: Dict) -> CostPrediction:
-        """构建预测结果"""
+        """构建预测结果（对齐 predict_final_cost 返回结构）"""
+        confidence = data.get("confidence", 0)
+        confidence_map = {"高": 0.9, "中等": 0.6, "低": 0.3}
         return CostPrediction(
-            predicted_total=data.get("predicted_total", 0),
-            predicted_variance=data.get("predicted_variance", 0),
+            predicted_total=data.get("predicted_final_cost", 0),
+            predicted_variance=data.get("predicted_overrun", 0),
             predicted_variance_rate=data.get("predicted_overrun_rate", 0),
             will_exceed_budget=data.get("will_exceed_budget", False),
-            confidence=data.get("confidence", 0),
-            method=data.get("method", "EVM")
+            confidence=confidence_map.get(confidence, 0.0) if isinstance(confidence, str) else confidence,
+            method="EAC"
         )
 
     def _build_risks(self, data: List[Dict]) -> List[CostRisk]:
@@ -424,7 +435,7 @@ class CostAnalysisAgent:
             - 趋势: {result.trend_direction}
             """
             query = "基于以上成本分析结果，请提供专业的成本控制建议"
-            rag_result = await run_rag(query, context=context)
+            rag_result = await run_rag(query, extra_context=context)
             if rag_result and "answer" in rag_result:
                 insights = rag_result["answer"].split("\n")
                 return [i.strip() for i in insights if i.strip()]

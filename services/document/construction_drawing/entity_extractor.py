@@ -17,6 +17,8 @@
 ========================================
 """
 from typing import List, Dict, Any, Optional
+import json
+import re
 import uuid
 
 from models.graph_models import (
@@ -159,6 +161,8 @@ class EntityExtractor:
             )
             node.properties["confidence"] = comp.get("confidence", 0.9)
             node.properties["source"] = comp.get("source", "rule")
+            # 携带页码，供连接关系按页共现推断
+            node.properties["page"] = comp.get("page", 0)
             nodes.append(node)
 
         return nodes
@@ -267,15 +271,81 @@ class EntityExtractor:
 }}
 """
 
+        result = {"components": [], "materials": [], "specifications": []}
+
         try:
-            # 这里调用 LLM，实际实现时需要根据 LLMClient 的接口调整
-            # response = self.llm_client.chat(prompt)
-            # 解析 JSON 响应...
-            pass
+            content = self.llm_client.chat(
+                messages=[
+                    {"role": "system", "content": "你是施工图实体抽取助手，只输出 JSON。"},
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0,
+            )
+            parsed = self._parse_llm_json(content)
+            if parsed is None:
+                return result
+
+            for item in parsed.get("components", []):
+                code = (item.get("code") or "").strip()
+                if not code:
+                    continue
+                node = create_component_node(
+                    code=code,
+                    component_type=item.get("type", "other"),
+                    doc_id=document_id,
+                )
+                node.properties["source"] = "llm"
+                node.properties["confidence"] = 0.7
+                result["components"].append(node)
+
+            for item in parsed.get("materials", []):
+                grade = (item.get("grade") or "").strip()
+                if not grade:
+                    continue
+                node = create_material_node(
+                    material_type=item.get("type", "other"),
+                    grade=grade,
+                    doc_id=document_id,
+                )
+                node.properties["source"] = "llm"
+                node.properties["confidence"] = 0.7
+                result["materials"].append(node)
+
+            for item in parsed.get("specifications", []):
+                code = (item.get("code") or "").strip()
+                if not code:
+                    continue
+                node = create_specification_node(spec_code=code)
+                node.properties["doc_id"] = document_id
+                node.properties["source"] = "llm"
+                node.properties["confidence"] = 0.7
+                result["specifications"].append(node)
+
         except Exception as e:
             logger.warning(f"LLM 提取失败: {e}")
 
-        return {"components": [], "materials": [], "specifications": []}
+        return result
+
+    @staticmethod
+    def _parse_llm_json(content: str) -> Optional[Dict[str, Any]]:
+        """从 LLM 回复中解析 JSON（容忍 ```json 代码块包裹）"""
+        if not content:
+            return None
+        text = content.strip()
+        # 去除 markdown 代码块标记
+        fence = re.search(r"```(?:json)?\s*(.+?)\s*```", text, re.DOTALL)
+        if fence:
+            text = fence.group(1).strip()
+        else:
+            # 截取首个 { 到末个 } 之间的内容
+            start, end = text.find("{"), text.rfind("}")
+            if start != -1 and end != -1 and end > start:
+                text = text[start:end + 1]
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError as e:
+            logger.warning(f"LLM 返回内容无法解析为 JSON: {e}")
+            return None
 
     def _parse_dimension_value(self, value_str: str) -> float:
         """解析尺寸数值"""
@@ -300,15 +370,15 @@ class EntityExtractor:
         unique = []
 
         for entity in entities:
-            # 根据关键属性生成去重键
+            # 统一从 dataclass 字段取去重键
             if isinstance(entity, ComponentNode):
                 key = f"comp:{entity.code}"
             elif isinstance(entity, MaterialNode):
-                key = f"mat:{entity.properties.get('grade', '')}"
+                key = f"mat:{entity.material_type}:{entity.grade}"
             elif isinstance(entity, SpecificationNode):
                 key = f"spec:{entity.spec_code}"
             elif isinstance(entity, DimensionNode):
-                key = f"dim:{entity.properties.get('dimension_type', '')}:{entity.properties.get('value', '')}"
+                key = f"dim:{entity.dimension_type}:{entity.value}"
             else:
                 key = f"{entity.label}:{entity.id}"
 
@@ -396,10 +466,10 @@ class EntityExtractor:
         for row in data[1:]:  # 跳过表头
             row_text = " ".join([str(cell) for cell in row if cell])
 
-            # 提取构件编号
+            # 提取构件编号（精确前缀，避免误抽与梁柱重叠）
             component_patterns = [
-                (r"[KDL]+[-\s]?\d+[a-zA-Z]?", "beam"),
-                (r"[KZ]+[-\s]?\d+[a-zA-Z]?", "column"),
+                (r"\b(?:WKL|JKL|KZL|KL|LL|XL|DL|L)[-\s]?\d+[a-zA-Z]?\b", "beam"),
+                (r"\b(?:KZZ|KZ|GZ|AZ|Z)[-\s]?\d+[a-zA-Z]?\b", "column"),
             ]
 
             for pattern, comp_type in component_patterns:

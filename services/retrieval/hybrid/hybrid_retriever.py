@@ -17,12 +17,22 @@
 ========================================
 """
 
+import hashlib
 from typing import List, Dict, Optional, Literal
 from loguru import logger
 
-from services.retrieval.bm25_retriever import BM25Retriever
-from services.retrieval.vector_retriever import VectorRetriever
+from services.retrieval.bm25.bm25_engine import BM25Retriever
+from services.retrieval.vector.vector_engine import VectorRetriever
 from services.rerank.reranker import Reranker
+
+
+def _dedup_key(doc: Dict) -> str:
+    """跨列表稳定去重键：优先 doc_id，否则按 text 生成稳定 hash"""
+    doc_id = doc.get('doc_id')
+    if doc_id:
+        return str(doc_id)
+    text = doc.get('text', '')
+    return 'h:' + hashlib.md5(text.encode('utf-8')).hexdigest()
 
 
 class HybridRetriever:
@@ -237,41 +247,37 @@ class HybridRetriever:
             vector_results: List[Dict],
             k: int = 60
     ) -> List[Dict]:
-        """简化版RRF（不依赖Reranker）"""
+        """简化版RRF（不依赖Reranker），用稳定键去重，分数写入 doc 后排序"""
         doc_scores = {}
         doc_data = {}
 
         # BM25结果
         for rank, doc in enumerate(bm25_results, 1):
-            doc_id = doc.get('doc_id', id(doc))
-            rrf_score = 1.0 / (k + rank)
-            doc_scores[doc_id] = rrf_score
-            doc_data[doc_id] = doc.copy()
-            doc_data[doc_id]['bm25_rank'] = rank
+            key = _dedup_key(doc)
+            doc_scores[key] = doc_scores.get(key, 0.0) + 1.0 / (k + rank)
+            if key not in doc_data:
+                doc_data[key] = doc.copy()
+            doc_data[key]['bm25_rank'] = rank
 
         # 向量结果
         for rank, doc in enumerate(vector_results, 1):
-            doc_id = doc.get('doc_id', id(doc))
-            rrf_score = 1.0 / (k + rank)
+            key = _dedup_key(doc)
+            doc_scores[key] = doc_scores.get(key, 0.0) + 1.0 / (k + rank)
+            if key not in doc_data:
+                doc_data[key] = doc.copy()
+            doc_data[key]['vector_rank'] = rank
 
-            if doc_id in doc_scores:
-                doc_scores[doc_id] += rrf_score
-                doc_data[doc_id]['vector_rank'] = rank
-            else:
-                doc_scores[doc_id] = rrf_score
-                doc_data[doc_id] = doc.copy()
-                doc_data[doc_id]['vector_rank'] = rank
+        # 分数写入 doc，按 doc 内字段排序，不再二次查表
+        for key, doc in doc_data.items():
+            doc['rrf_score'] = doc_scores[key]
 
-        # 排序
         sorted_docs = sorted(
             doc_data.values(),
-            key=lambda x: doc_scores[x.get('doc_id', id(x))],
+            key=lambda d: d['rrf_score'],
             reverse=True
         )
 
-        # 添加RRF分数和排名
         for rank, doc in enumerate(sorted_docs, 1):
-            doc['rrf_score'] = doc_scores[doc.get('doc_id', id(doc))]
             doc['fusion_rank'] = rank
 
         return sorted_docs
@@ -291,26 +297,26 @@ class HybridRetriever:
         if fusion_weights is None:
             fusion_weights = {'bm25': 0.5, 'vector': 0.5}
 
-        # 合并所有文档
+        # 合并所有文档（稳定键去重）
         all_docs = {}
 
         # BM25结果
         for doc in bm25_results:
-            doc_id = doc.get('doc_id', id(doc))
+            key = _dedup_key(doc)
             doc_copy = doc.copy()
             doc_copy['bm25_score'] = doc.get('score', 0)
-            all_docs[doc_id] = doc_copy
+            all_docs[key] = doc_copy
 
         # 向量结果
         for doc in vector_results:
-            doc_id = doc.get('doc_id', id(doc))
-            if doc_id in all_docs:
-                all_docs[doc_id]['vector_score'] = doc.get('score', 0)
+            key = _dedup_key(doc)
+            if key in all_docs:
+                all_docs[key]['vector_score'] = doc.get('score', 0)
             else:
                 doc_copy = doc.copy()
                 doc_copy['vector_score'] = doc.get('score', 0)
                 doc_copy['bm25_score'] = 0
-                all_docs[doc_id] = doc_copy
+                all_docs[key] = doc_copy
 
         # 归一化并计算加权分数
         docs_list = list(all_docs.values())
@@ -352,8 +358,8 @@ class HybridRetriever:
 # =========================================
 """
 from services.retrieval.hybrid_retriever import HybridRetriever
-from services.retrieval.bm25_retriever import BM25Retriever
-from services.retrieval.vector_retriever import VectorRetriever
+from services.retrieval.bm25.bm25_engine import BM25Retriever
+from services.retrieval.vector.vector_engine import VectorRetriever
 from services.rerank.reranker import Reranker
 
 # 1. 初始化各组件

@@ -20,12 +20,13 @@
 
 from enum import Enum
 from typing import Optional, List, Dict, Any
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from functools import wraps
 
 from fastapi import HTTPException, Depends, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import jwt, JWTError
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 from loguru import logger
 
@@ -140,10 +141,12 @@ ROLE_ACTION_MAP: Dict[UserRole, List[ActionType]] = {
 # JWT 配置
 # =========================================
 
-# 从配置获取，如果没有则使用默认值
-JWT_SECRET_KEY = getattr(settings, 'JWT_SECRET_KEY', 'your-secret-key-change-in-production')
+# JWT 密钥强制从配置读取，缺失即 fail-fast，禁止回退硬编码默认串
+JWT_SECRET_KEY = settings.JWT_SECRET_KEY
+if not JWT_SECRET_KEY:
+    raise RuntimeError("JWT_SECRET_KEY 未配置，请在 .env 中设置")
 JWT_ALGORITHM = "HS256"
-JWT_EXPIRE_HOURS = getattr(settings, 'JWT_EXPIRE_HOURS', 24)
+JWT_EXPIRE_HOURS = settings.JWT_EXPIRE_MINUTES / 60
 
 
 # =========================================
@@ -196,14 +199,14 @@ class PermissionChecker:
         返回：
             JWT 令牌字符串
         """
-        expire = datetime.utcnow() + timedelta(hours=JWT_EXPIRE_HOURS)
+        expire = datetime.now(timezone.utc) + timedelta(hours=JWT_EXPIRE_HOURS)
 
         payload = {
             "sub": user_id,
             "username": username,
             "role": role.value if isinstance(role, UserRole) else role,
             "exp": expire,
-            "iat": datetime.utcnow()
+            "iat": datetime.now(timezone.utc)
         }
 
         if extra_data:
@@ -452,10 +455,84 @@ class PermissionChecker:
             )
             return False
 
-        # TODO: 检查用户对特定资源的细粒度权限
-        # 这里可以查询 UserPermission 表获取更细粒度的权限
+        # 检查用户对特定资源的细粒度权限（UserPermission 表）
+        if resource_id:
+            fine_grained = self._check_fine_grained_permission(
+                user_id, resource_type, resource_id, action
+            )
+            if fine_grained is False:
+                logger.debug(
+                    f"用户 {user_id} 对资源 {resource_type.value}:{resource_id} "
+                    f"无 {action.value} 细粒度权限"
+                )
+                return False
 
         return True
+
+    def _check_fine_grained_permission(
+        self,
+        user_id: str,
+        resource_type: ResourceType,
+        resource_id: str,
+        action: ActionType
+    ) -> Optional[bool]:
+        """
+        查询 UserPermission 表判断细粒度权限
+
+        返回：
+            True  - 存在显式授权且允许
+            False - 存在显式记录但不允许
+            None  - 无显式记录（交由上层角色权限决定）
+        """
+        action_to_column = {
+            ActionType.READ: "can_read",
+            ActionType.WRITE: "can_write",
+            ActionType.DELETE: "can_delete",
+            ActionType.SHARE: "can_share",
+        }
+        column = action_to_column.get(action)
+        if column is None:
+            return None
+
+        from core.database import SessionLocal
+        from models.user import UserPermission
+
+        db: Session = SessionLocal()
+        try:
+            now = datetime.now(timezone.utc)
+            # 优先匹配具体资源，其次匹配资源类型通配（resource_id 为 NULL）
+            # 注意：SQL `IN (..., NULL)` 永不匹配 NULL，须用 or_ + is_(None)
+            records = (
+                db.query(UserPermission)
+                .filter(
+                    UserPermission.user_id == user_id,
+                    UserPermission.resource_type == resource_type.value,
+                    or_(
+                        UserPermission.resource_id == resource_id,
+                        UserPermission.resource_id.is_(None),
+                    ),
+                )
+                .all()
+            )
+            if not records:
+                return None
+
+            # 具体资源记录优先于通配记录
+            records.sort(key=lambda r: 0 if r.resource_id == resource_id else 1)
+            for record in records:
+                if record.valid_from and now < record.valid_from:
+                    continue
+                if record.valid_until and now > record.valid_until:
+                    continue
+                return bool(getattr(record, column, False))
+
+            return None
+        except Exception as e:
+            logger.error(f"细粒度权限查询失败: {e}")
+            # 查询失败时不放行细粒度判断，保持上层角色权限结果
+            return None
+        finally:
+            db.close()
 
     # =========================================
     # 权限验证装饰器
@@ -531,7 +608,7 @@ class PermissionChecker:
         key = self._get_cache_key(user_id, resource_type, resource_id)
         self._cache[key] = {
             "value": has_permission,
-            "expires_at": datetime.utcnow() + timedelta(seconds=self._cache_ttl)
+            "expires_at": datetime.now(timezone.utc) + timedelta(seconds=self._cache_ttl)
         }
 
     def get_cached_permission(
@@ -547,7 +624,7 @@ class PermissionChecker:
         if not cached:
             return None
 
-        if datetime.utcnow() > cached["expires_at"]:
+        if datetime.now(timezone.utc) > cached["expires_at"]:
             del self._cache[key]
             return None
 

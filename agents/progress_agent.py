@@ -262,10 +262,10 @@ class ProgressAnalysisAgent:
             result.critical_path_tasks = self._build_critical_path(critical_data)
             result.critical_path_status = self._assess_critical_path_status(result.critical_path_tasks)
 
-            # Step 5: 趋势分析
+            # Step 5: 趋势分析（工具仅给出聚合趋势，无逐期序列）
             trend_data = self.progress_tools.analyze_progress_trend(project_id, days=analysis_days)
             result.trends = self._build_trends(trend_data)
-            result.trend_direction = self._determine_trend_direction(result.trends)
+            result.trend_direction = self._map_trend_direction(trend_data.get("trend", "平稳"))
 
             # Step 6: 完工预测
             prediction_data = self.progress_tools.predict_completion_time(project_id)
@@ -388,18 +388,18 @@ class ProgressAnalysisAgent:
         )
 
     def _build_delayed_tasks(self, data: List[Dict]) -> List[DelayedTask]:
-        """构建延期任务列表"""
+        """构建延期任务列表（对齐 get_delayed_tasks 返回结构）"""
         return [DelayedTask(
             task_id=task.get("task_id", ""),
             task_name=task.get("task_name", ""),
             planned_progress=task.get("planned_progress", 0),
             actual_progress=task.get("actual_progress", 0),
-            spi=task.get("spi", 1),
-            delay_days=task.get("delay_days", 0),
-            planned_end=task.get("planned_end", ""),
-            is_critical=task.get("is_critical", False),
-            responsible=task.get("responsible", ""),
-            delay_reason=task.get("delay_reason", "")
+            spi=task.get("spi") if task.get("spi") is not None else 1,
+            delay_days=0,
+            planned_end="",
+            is_critical=task.get("is_critical_path", False),
+            responsible="",
+            delay_reason=task.get("reason", "")
         ) for task in data]
 
     def _build_critical_path(self, data: List[Dict]) -> List[CriticalPathTask]:
@@ -426,49 +426,38 @@ class ProgressAnalysisAgent:
         return "normal"
 
     def _build_trends(self, data: Dict) -> List[ProgressTrend]:
-        """构建趋势数据"""
-        updates = data.get("updates", [])
-        return [ProgressTrend(
-            date=update.get("date", ""),
-            planned_progress=update.get("planned_progress", 0),
-            actual_progress=update.get("actual_progress", 0),
-            spi=update.get("spi", 1),
-            variance=update.get("actual_progress", 0) - update.get("planned_progress", 0)
-        ) for update in updates]
+        """构建趋势数据（analyze_progress_trend 仅返回聚合指标，无逐期序列）"""
+        return []
 
-    def _determine_trend_direction(self, trends: List[ProgressTrend]) -> str:
-        """判断趋势方向"""
-        if len(trends) < 2:
-            return "stable"
-        recent_spis = [t.spi for t in trends[-5:]]
-        if len(recent_spis) >= 2:
-            if recent_spis[-1] > recent_spis[0] + 0.03:
-                return "improving"
-            elif recent_spis[-1] < recent_spis[0] - 0.03:
-                return "deteriorating"
-        return "stable"
+    def _map_trend_direction(self, trend: str) -> str:
+        """将工具的中文趋势映射为方向标识"""
+        mapping = {"恶化": "deteriorating", "好转": "improving", "改善": "improving", "平稳": "stable"}
+        return mapping.get(trend, "stable")
 
     def _build_prediction(self, data: Dict) -> CompletionPrediction:
-        """构建预测结果"""
+        """构建预测结果（对齐 predict_completion_time 返回结构）"""
+        delay_days = data.get("predicted_delay_days", 0)
+        confidence_map = {"高": 0.9, "中": 0.6, "低": 0.3}
+        confidence = data.get("prediction_confidence", "")
         return CompletionPrediction(
-            predicted_end_date=data.get("predicted_end_date", ""),
-            original_end_date=data.get("original_end_date", ""),
-            delay_days=data.get("delay_days", 0),
-            confidence=data.get("confidence", 0),
-            method=data.get("method", "EVM"),
-            will_delay=data.get("will_delay", False)
+            predicted_end_date="",
+            original_end_date=data.get("planned_end_date", "") or "",
+            delay_days=delay_days,
+            confidence=confidence_map.get(confidence, 0.0),
+            method="SPI",
+            will_delay=delay_days > 0
         )
 
-    def _build_bottlenecks(self, data: Dict) -> List[Bottleneck]:
-        """构建瓶颈分析"""
-        bottlenecks = data.get("bottlenecks", [])
+    def _build_bottlenecks(self, data: List[Dict]) -> List[Bottleneck]:
+        """构建瓶颈分析（identify_bottlenecks 返回任务级列表）"""
+        impact_map = {"高": "high", "中": "medium", "低": "low"}
         return [Bottleneck(
-            bottleneck_type=b.get("type", ""),
-            description=b.get("description", ""),
-            affected_tasks=b.get("affected_tasks", []),
-            impact_level=b.get("impact_level", "medium"),
+            bottleneck_type="关键路径任务",
+            description=b.get("reason", ""),
+            affected_tasks=[b.get("task_id", "")],
+            impact_level=impact_map.get(b.get("impact", ""), "medium"),
             recommendation=b.get("recommendation", "")
-        ) for b in bottlenecks]
+        ) for b in data]
 
     def _generate_suggestions(self, result: ProgressAnalysisResult) -> List[str]:
         """生成进度建议"""
@@ -509,7 +498,7 @@ class ProgressAnalysisAgent:
             - 趋势: {result.trend_direction}
             """
             query = "基于以上进度分析结果，请提供专业的进度管控建议"
-            rag_result = await run_rag(query, context=context)
+            rag_result = await run_rag(query, extra_context=context)
             if rag_result and "answer" in rag_result:
                 insights = rag_result["answer"].split("\n")
                 return [i.strip() for i in insights if i.strip()]
