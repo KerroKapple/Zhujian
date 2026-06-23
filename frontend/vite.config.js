@@ -20,13 +20,16 @@ export default defineConfig({
     },
   },
   build: {
-    // 拆分大依赖为独立 chunk，避免单包过大、提升首屏缓存命中
+    // 拆分大依赖为独立 chunk，避免单包过大、提升首屏缓存命中。
+    // vite 8 默认 rolldown bundler 不再接受 manualChunks 的对象写法，
+    // 必须用函数形式（按模块 id 归组）。
     rollupOptions: {
       output: {
-        manualChunks: {
-          echarts: ['echarts'],
-          'element-plus': ['element-plus', '@element-plus/icons-vue'],
-          vue: ['vue', 'vue-router', 'pinia'],
+        manualChunks(id) {
+          if (!id.includes('node_modules')) return
+          if (id.includes('echarts')) return 'echarts'
+          if (id.includes('element-plus')) return 'element-plus'
+          if (id.includes('vue') || id.includes('pinia')) return 'vue'
         },
       },
     },
